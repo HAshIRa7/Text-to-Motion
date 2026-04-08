@@ -1,0 +1,18 @@
+[project]
+name = "text_to_motion"
+version = "0.1.0"
+description = "Project on generating motion by prompt"
+readme = "README.md"
+authors = [
+    { name = "Egor", email = "egormipt@yandex.ru" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "viser",
+    "tyro",
+    "robot_descriptions",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
