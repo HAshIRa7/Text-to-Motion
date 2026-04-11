@@ -19,16 +19,14 @@ def match_joint_names(joint_names_data: List[str], urdf_joint_names: List[str], 
     
     return: joints data in urdf order
     '''
-    # build permutation 
     permutation = []
     for urdf_joint_name in urdf_joint_names:
         permutation.append(joint_names_data.index(urdf_joint_name))
     
     return joint_data[:, permutation]
 
-
 def main(
-    # motion_file_path: str = 'run1_subject2.npz',
+    motion_folder: str = 'generated_motions',
     robot_type = "g1",
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
@@ -40,12 +38,11 @@ def main(
     reset = False 
 
     dct = {}
-    motions_files = os.listdir('motions')
-    for motion_file in os.listdir('motions'):
+    motions_files = os.listdir(motion_folder)
+    for motion_file in motions_files:
         dct[motion_file] = {}
-        with np.load('motions/'+ motion_file, allow_pickle=True) as data:
+        with np.load(motion_folder + '/' + motion_file, allow_pickle=True) as data:
             dct[motion_file]['joint_names'] = list(data['joint_names'])
-            dct[motion_file]['body_names'] = data['body_names']
             dct[motion_file]['joint_pos'] = data['joint_pos']
             dct[motion_file]['body_pos_w'] = data['body_pos_w']
             dct[motion_file]['body_quat_w'] = data['body_quat_w']
