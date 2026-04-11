@@ -17,6 +17,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 git clone https://github.com/HAshIRa7/Text-to-Motion.git
 uv sync
+source .venv/bin/activate
 ``` 
 
 ## Launch Training
