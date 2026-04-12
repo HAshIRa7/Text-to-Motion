@@ -25,7 +25,7 @@ def quat_apply_inverse(quat: np.ndarray, vec: np.ndarray) -> np.ndarray:
     vec = vec.reshape(-1, 3)
     xyz = quat[:, 1:]
     t = np.cross(xyz, vec, axis=-1) * 2
-    return (vec - quat[:, 0:1] * t + xyz.cross(t, dim=-1)).view(shape)
+    return (vec - quat[:, 0:1] * t + np.cross(xyz, t, axis=-1)).reshape(shape)
 
 def yaw_quat(quat: np.ndarray) -> np.ndarray:
     shape = quat.shape
@@ -40,13 +40,6 @@ def yaw_quat(quat: np.ndarray) -> np.ndarray:
     quat_yaw[:, 0] = np.cos(yaw / 2)
     quat_yaw = quat_yaw / np.linalg.norm(quat, axis=-1, keepdims=True)
     return quat_yaw.reshape(shape)
-
-def convert_lin_vel_to_xy(quat: np.ndarray, lin_vel_r: np.ndarray):
-    
-    yaw_aligned_quat = yaw_quat(quat) 
-    lin_vel_yaw_aligned = quat_apply(yaw_aligned_quat, lin_vel_r)
-    
-    return lin_vel_yaw_aligned[:, :2]
 
 def quat_apply(quat: np.ndarray, vec: np.ndarray) -> np.ndarray:
     shape = vec.shape

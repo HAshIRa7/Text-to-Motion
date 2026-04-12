@@ -8,10 +8,18 @@ import bisect
 from tqdm import tqdm
 
 device = 'cuda:0'
-humanoid_dataloader = DataLoader(HumanoidDataset(motions_folder='motions', motions_len = 500), batch_size=64, shuffle=True, drop_last=True)
+humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 500)
+humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=64, shuffle=True, drop_last=True)
 batch = next(iter(humanoid_dataloader))
 first_batch = batch.clone()
-flow_net = FlowMatchingNet(input_dim=batch.shape[-1] + 1, hidden_dim=256, output_dim=batch.shape[-1]).to(device)
+print(f'lin_vel_dataset_mean: {humanoid_dataset.mean_velocity}, lin_vel_dataset_std: {humanoid_dataset.std_velocity}')
+flow_net = FlowMatchingNet(
+    input_dim=batch.shape[-1] + 1, 
+    hidden_dim=256, 
+    output_dim=batch.shape[-1],
+    lin_vel_mean=humanoid_dataset.mean_velocity,
+    lin_vel_std=humanoid_dataset.std_velocity,
+).to(device)
 optimizer = torch.optim.AdamW(flow_net.parameters(), lr=3e-4)
 save_folder = 'checkpoints'
 

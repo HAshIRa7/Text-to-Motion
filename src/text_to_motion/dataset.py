@@ -15,12 +15,25 @@ class HumanoidDataset(Dataset):
         self.motions_len = motions_len
         self.motions_len_cumsum = []
         
+        self.mean_velocity: torch.Tensor = torch.zeros(2)
+        self.mean_velocity_squared: torch.Tensor = torch.zeros(2)
+        self.std_velocity: torch.Tensor | None = None
+        
         total_len = 0
+        pure_motions_len = 0
         for motion_file in self.data_dict:
             motion_len = self.data_dict[motion_file]['lin_vel'].shape[0]
+            pure_motions_len += motion_len
             total_len += (motion_len - self.motions_len)
             self.motions_len_cumsum.append(total_len)
+            self.mean_velocity = self.mean_velocity + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel'], axis=0))
+            self.mean_velocity_squared = self.mean_velocity_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel']**2, axis=0))
+            # motion_mean.append(np.mean(self.data_dict[motion_file]['lin_vel']))
+            # motion_std.append(np.std(self.data_dict[motion_file]['lin_vel']))
         self.total_len = total_len
+        self.mean_velocity = self.mean_velocity / pure_motions_len
+        self.mean_velocity_squared = self.mean_velocity_squared / pure_motions_len
+        self.std_velocity = torch.sqrt(self.mean_velocity_squared - self.mean_velocity**2)
     
     def __len__(self,):
         return self.total_len - self.motions_len
@@ -43,6 +56,6 @@ class HumanoidDataset(Dataset):
             torch.tensor(joint_pos).to(dtype=torch.float32),
             torch.tensor(roll[:, None]).to(dtype=torch.float32),
             torch.tensor(pitch[:, None]).to(dtype=torch.float32),
-            torch.tensor(lin_vel).to(dtype=torch.float32),
+            ((torch.tensor(lin_vel) - self.mean_velocity[None, :]) / self.std_velocity[None, :]).to(dtype=torch.float32),
             torch.tensor(ang_vel[:, None]).to(dtype=torch.float32),
         ], dim=-1)

@@ -7,7 +7,7 @@ class PositionEncoding(nn.Module):
         super().__init__()
         
     def forward(self, x: torch.Tensor):
-        batch_size, seq_len, hidden_dim = x.shape
+        _, seq_len, hidden_dim = x.shape
         
         pe = torch.zeros(seq_len, hidden_dim, device=x.device, dtype=x.dtype)[None, :, :]
         positions = torch.arange(seq_len).to(dtype=x.dtype, device=x.device)
@@ -19,11 +19,23 @@ class PositionEncoding(nn.Module):
 
 class FlowMatchingNet(nn.Module):
     
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(
+        self, 
+        input_dim: int, 
+        hidden_dim: int, 
+        output_dim: int, 
+        lin_vel_mean: torch.Tensor | None = None, 
+        lin_vel_std: torch.Tensor | None = None
+    ):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
+        lin_vel_mean = lin_vel_mean if lin_vel_mean is not None else torch.zeros(2)
+        lin_vel_std = lin_vel_std if lin_vel_std is not None else torch.ones(2)
+        
+        self.register_buffer("lin_vel_mean", lin_vel_mean)
+        self.register_buffer("lin_vel_std", lin_vel_std)
         
         self.linear1 = nn.Linear(input_dim, hidden_dim)
         for i in range(3):

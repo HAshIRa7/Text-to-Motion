@@ -50,9 +50,11 @@ joint_names = [
 ]
 
 flow_net = FlowMatchingNet(input_dim=input_shape, hidden_dim=hidden_dim, output_dim=output_shape).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_20.pth', weights_only=True)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_90.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
+
+print(flow_net.lin_vel_mean, flow_net.lin_vel_std)
 
 timesteps = torch.linspace(0, 1, n_steps + 1).to(device=device)
 
@@ -83,10 +85,9 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
     quat_w = convert_roll_pitch_ang_vel_to_quat(roll, pitch, ang_vel)[:, None]
     # convert roll, pitch, yaw to quat
     # yaw_start == 0, yaw_new = yaw_start + ang_vel * dt
-    lin_vel = motion[0, :, 31:33].cpu().numpy()
+    lin_vel = (motion[0, :, 31:33] * flow_net.lin_vel_std[None, :] + flow_net.lin_vel_mean[None, :]).cpu().numpy()
     # convert lin_vel_xy_projected velocity to root_pos
-    root_pos = convert_lin_vel_xy_to_root_pos(lin_vel)[:, None]
-    print(root_pos)
+    root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
 
     cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(save_dir, exist_ok=True)
