@@ -6,7 +6,7 @@ import bisect
 
 
 class HumanoidDataset(Dataset):
-    def __init__(self, motions_folder: str, motions_len: int = 500):
+    def __init__(self, motions_folder: str, motions_len: int = 350, vel_normalization=False):
         self.data_dict = collect_data(motions_folder)
         self.idx2motion = {}
         for idx, motion_file in enumerate(self.data_dict):
@@ -17,7 +17,7 @@ class HumanoidDataset(Dataset):
         
         self.mean_velocity: torch.Tensor = torch.zeros(2)
         self.mean_velocity_squared: torch.Tensor = torch.zeros(2)
-        self.std_velocity: torch.Tensor | None = None
+        self.std_velocity: torch.Tensor = torch.ones(2)
         
         total_len = 0
         pure_motions_len = 0
@@ -26,14 +26,14 @@ class HumanoidDataset(Dataset):
             pure_motions_len += motion_len
             total_len += (motion_len - self.motions_len)
             self.motions_len_cumsum.append(total_len)
-            self.mean_velocity = self.mean_velocity + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel'], axis=0))
-            self.mean_velocity_squared = self.mean_velocity_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel']**2, axis=0))
-            # motion_mean.append(np.mean(self.data_dict[motion_file]['lin_vel']))
-            # motion_std.append(np.std(self.data_dict[motion_file]['lin_vel']))
+            if vel_normalization:
+                self.mean_velocity = self.mean_velocity + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel'], axis=0))
+                self.mean_velocity_squared = self.mean_velocity_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel']**2, axis=0))
         self.total_len = total_len
-        self.mean_velocity = self.mean_velocity / pure_motions_len
-        self.mean_velocity_squared = self.mean_velocity_squared / pure_motions_len
-        self.std_velocity = torch.sqrt(self.mean_velocity_squared - self.mean_velocity**2)
+        if vel_normalization:
+            self.mean_velocity = self.mean_velocity / pure_motions_len
+            self.mean_velocity_squared = self.mean_velocity_squared / pure_motions_len
+            self.std_velocity = torch.sqrt(self.mean_velocity_squared - self.mean_velocity**2)
     
     def __len__(self,):
         return self.total_len - self.motions_len

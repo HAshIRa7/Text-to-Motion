@@ -1,26 +1,24 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from text_to_motion import FlowMatchingNet, HumanoidDataset
+from text_to_motion import FlowMatchingNet, HumanoidDataset, TransformerConfig
 from torch.utils.data import DataLoader
 import os
 import bisect
 from tqdm import tqdm
 
 device = 'cuda:0'
-humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 500)
-humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=64, shuffle=True, drop_last=True)
+humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 350, vel_normalization=True)
+humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=256, shuffle=True, drop_last=False, num_workers=4)
 batch = next(iter(humanoid_dataloader))
-first_batch = batch.clone()
+config = TransformerConfig()
 print(f'lin_vel_dataset_mean: {humanoid_dataset.mean_velocity}, lin_vel_dataset_std: {humanoid_dataset.std_velocity}')
 flow_net = FlowMatchingNet(
-    input_dim=batch.shape[-1] + 1, 
-    hidden_dim=256, 
-    output_dim=batch.shape[-1],
+    config=config,
     lin_vel_mean=humanoid_dataset.mean_velocity,
     lin_vel_std=humanoid_dataset.std_velocity,
 ).to(device)
-optimizer = torch.optim.AdamW(flow_net.parameters(), lr=3e-4)
+optimizer = torch.optim.Adam(flow_net.parameters(), lr=2e-5)
 save_folder = 'checkpoints'
 
 for epoch in tqdm(range(1000)):
@@ -35,13 +33,14 @@ for epoch in tqdm(range(1000)):
         optimizer.zero_grad()
         loss = ((flow_net(x_t, t) - (x_1 - x_0))**2).mean()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
         optimizer.step()
         
         loss_sum += loss.item()
         
     print(f'epoch: {epoch}, current_loss: {np.round(loss_sum / len(humanoid_dataloader), 4)}')
         
-    if epoch % 10 == 0:
+    if epoch % 5 == 0:
         os.makedirs(save_folder, exist_ok=True)
         torch.save(flow_net.state_dict(), f'{save_folder}/model_weight_{epoch}.pth')
         

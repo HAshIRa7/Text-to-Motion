@@ -50,8 +50,10 @@ def convert_lin_vel_xy_to_root_pos(lin_vel_yaw_aligned: np.ndarray, quat: np.nda
 def collect_data(motions_dir: str):
     dct = {}
     for motion_file in os.listdir(motions_dir):
-        dct[motion_file] = {}
         with np.load(motions_dir +'/' + motion_file, allow_pickle=True) as data:
+            if len(data['joint_pos']) < 350:
+                continue
+            dct[motion_file] = {}
             dct[motion_file]['joint_names'] = list(data['joint_names'])
             dct[motion_file]['joint_pos'] = data['joint_pos']
             root_quat_w = data['body_quat_w'][:, 0]

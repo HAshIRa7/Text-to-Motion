@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from text_to_motion import FlowMatchingNet
+from text_to_motion import FlowMatchingNet, TransformerConfig
 from text_to_motion import (
     convert_roll_pitch_ang_vel_to_quat,
     convert_lin_vel_xy_to_root_pos,
@@ -9,13 +9,14 @@ from text_to_motion import (
 from datetime import datetime
 import os
 
-input_shape=35
+
+input_shape=34
 hidden_dim=256
 output_shape=34
 device = 'cuda:1'
 checkpoint_path='checkpoints'
-motion_len = 500
-n_steps = 200
+motion_len = 350
+n_steps = 5
 save_dir = 'generated_motions'
 joint_names = [
     'left_hip_pitch_joint',
@@ -49,20 +50,22 @@ joint_names = [
     'right_wrist_yaw_joint'
 ]
 
-flow_net = FlowMatchingNet(input_dim=input_shape, hidden_dim=hidden_dim, output_dim=output_shape).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_90.pth', weights_only=True)
+config = TransformerConfig()
+flow_net = FlowMatchingNet(config).to(device)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_15.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
 
+print(flow_net)
 print(flow_net.lin_vel_mean, flow_net.lin_vel_std)
 
 timesteps = torch.linspace(0, 1, n_steps + 1).to(device=device)
 
-motion = torch.randn(1, 500, input_shape - 1).to(device=device)
+motion = torch.randn(1, motion_len, input_shape).to(device=device)
 with torch.no_grad():
     for it in range(n_steps):
-        motion = flow_net.step(motion, timesteps[it][None], timesteps[it + 1][None])
-    
+        motion = flow_net.midpoint_step(motion, timesteps[it][None], timesteps[it + 1][None])
+        
 def postprocess_motion(motion: torch.tensor, save_dir: str):
     '''
     return format .npz file with keys
@@ -88,7 +91,7 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
     lin_vel = (motion[0, :, 31:33] * flow_net.lin_vel_std[None, :] + flow_net.lin_vel_mean[None, :]).cpu().numpy()
     # convert lin_vel_xy_projected velocity to root_pos
     root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
-
+    print(root_pos)
     cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(save_dir, exist_ok=True)
     np.savez(

@@ -11,11 +11,16 @@ dependencies = [
     "viser",
     "tyro",
     "robot_descriptions",
+    "packaging==26.0",
+    "liger-kernel==0.7.0",
     "torch",
 ]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
+
+[tool.setuptools.packages.find]
+include = ["efficient_model*"]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
@@ -24,6 +29,15 @@ explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[project.optional-dependencies]
+flash = [
+    "flash-attn==2.8.3",
+]
+
+[tool.uv]
+# flash-attn requires torch to be installed first and needs --no-build-isolation
+no-build-isolation-package = ["flash-attn"]
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]

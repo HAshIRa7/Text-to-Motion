@@ -48,6 +48,7 @@ def main(
             dct[motion_file]['body_quat_w'] = data['body_quat_w']
     
         dct[motion_file]['motion_len'] = len(dct[motion_file]['joint_pos'])
+        print(f'{motion_file}: {dct[motion_file]["motion_len"]}')
     
     robot_base = server.scene.add_frame("/robot", show_axes=False)
     
