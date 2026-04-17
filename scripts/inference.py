@@ -13,7 +13,7 @@ import os
 input_shape=34
 hidden_dim=256
 output_shape=34
-device = 'cuda:1'
+device = 'cuda:0'
 checkpoint_path='checkpoints'
 motion_len = 350
 n_steps = 5
@@ -52,7 +52,7 @@ joint_names = [
 
 config = TransformerConfig()
 flow_net = FlowMatchingNet(config).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_15.pth', weights_only=True)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_65.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
 
@@ -91,7 +91,6 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
     lin_vel = (motion[0, :, 31:33] * flow_net.lin_vel_std[None, :] + flow_net.lin_vel_mean[None, :]).cpu().numpy()
     # convert lin_vel_xy_projected velocity to root_pos
     root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
-    print(root_pos)
     cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(save_dir, exist_ok=True)
     np.savez(

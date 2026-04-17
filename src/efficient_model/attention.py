@@ -114,16 +114,6 @@ class MultiHeadAttention(nn.Module):
         # TODO: Replace vanilla attention with Flash Attention
         scale = 1.0 / math.sqrt(self.head_dim)
         attn_weights = torch.matmul(q, k.transpose(-2, -1)) * scale
-
-        if attention_mask is None:
-            causal_mask = torch.triu(
-                torch.ones(S, S, dtype=torch.bool, device=x.device), 
-                diagonal=1
-            )
-            attn_weights = attn_weights.masked_fill(causal_mask, float('-inf'))
-        else:
-            attn_weights = attn_weights + attention_mask
-
         attn_weights = F.softmax(attn_weights, dim=-1)
         attn_weights = self.dropout(attn_weights)
 
