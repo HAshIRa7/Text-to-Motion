@@ -81,8 +81,6 @@ class EfficientTransformer(nn.Module):
         x = self.in_linear(x)
         for idx, layer in enumerate(self.layers):
             x = layer(x, attention_mask)
-            # print(x)
             x = self.adaln_layers[idx](x, t)
-            # print(x)
         x = self.out_linear(x)
         return x.float()

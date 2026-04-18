@@ -13,12 +13,24 @@ humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=256, shuffle=True,
 batch = next(iter(humanoid_dataloader))
 config = TransformerConfig()
 print(f'lin_vel_dataset_mean: {humanoid_dataset.mean_velocity}, lin_vel_dataset_std: {humanoid_dataset.std_velocity}')
+print(f'joint_pos_dataset_mean: {humanoid_dataset.mean_joint_pos}, joint_pos_dataset_std: {humanoid_dataset.std_joint_pos}')
+print(f'ang_vel_dataset_mean: {humanoid_dataset.mean_ang_vel}, ang_vel_dataset_std: {humanoid_dataset.std_ang_vel}')
+print(f'roll_dataset_mean: {humanoid_dataset.mean_roll}, roll_dataset_std: {humanoid_dataset.std_roll}')
+print(f'pitch_dataset_mean: {humanoid_dataset.mean_pitch}, pitch_dataset_std: {humanoid_dataset.std_pitch}')
 flow_net = FlowMatchingNet(
     config=config,
     lin_vel_mean=humanoid_dataset.mean_velocity,
     lin_vel_std=humanoid_dataset.std_velocity,
+    joint_pos_mean=humanoid_dataset.mean_joint_pos,
+    joint_pos_std=humanoid_dataset.std_joint_pos,
+    ang_vel_mean=humanoid_dataset.mean_ang_vel,
+    ang_vel_std=humanoid_dataset.std_ang_vel,
+    roll_mean=humanoid_dataset.mean_roll,
+    roll_std=humanoid_dataset.std_roll,
+    pitch_mean=humanoid_dataset.mean_pitch,
+    pitch_std=humanoid_dataset.std_pitch,
 ).to(device)
-optimizer = torch.optim.Adam(flow_net.parameters(), lr=2e-5)
+optimizer = torch.optim.Adam(flow_net.parameters(), lr=3e-4)
 save_folder = 'checkpoints'
 
 for epoch in tqdm(range(1000)):
@@ -33,7 +45,6 @@ for epoch in tqdm(range(1000)):
         optimizer.zero_grad()
         loss = ((flow_net(x_t, t) - (x_1 - x_0))**2).mean()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
         optimizer.step()
         
         loss_sum += loss.item()

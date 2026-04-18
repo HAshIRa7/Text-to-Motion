@@ -16,7 +16,7 @@ output_shape=34
 device = 'cuda:0'
 checkpoint_path='checkpoints'
 motion_len = 350
-n_steps = 5
+n_steps = 200
 save_dir = 'generated_motions'
 joint_names = [
     'left_hip_pitch_joint',
@@ -52,12 +52,16 @@ joint_names = [
 
 config = TransformerConfig()
 flow_net = FlowMatchingNet(config).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_65.pth', weights_only=True)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_995.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
 
 print(flow_net)
 print(flow_net.lin_vel_mean, flow_net.lin_vel_std)
+print(flow_net.joint_pos_mean, flow_net.joint_pos_std)
+print(flow_net.ang_vel_mean, flow_net.ang_vel_std)
+print(flow_net.roll_mean, flow_net.roll_std)
+print(flow_net.pitch_mean, flow_net.pitch_std)
 
 timesteps = torch.linspace(0, 1, n_steps + 1).to(device=device)
 
@@ -81,14 +85,15 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
     ang_vel - motion[33:]
     '''
     
-    joint_pos = motion[0, :, :29].cpu().numpy()
-    ang_vel = motion[0, :, 33].cpu().numpy()
-    roll = motion[0, :, 29].cpu().numpy()
-    pitch = motion[0, :, 30].cpu().numpy()
+    # joint_pos = motion[0, :, :29].cpu().numpy()
+    ang_vel = (motion[0, :, 33:34] * flow_net.ang_vel_std[None, :] + flow_net.ang_vel_mean[None, :])[:, 0].cpu().numpy()
+    roll = (motion[0, :, 29:30] * flow_net.roll_std[None, :] + flow_net.roll_mean[None, :])[:, 0].cpu().numpy()
+    pitch = (motion[0, :, 30:31] * flow_net.pitch_std[None, :] + flow_net.pitch_mean[None, :])[:, 0].cpu().numpy()
     quat_w = convert_roll_pitch_ang_vel_to_quat(roll, pitch, ang_vel)[:, None]
     # convert roll, pitch, yaw to quat
     # yaw_start == 0, yaw_new = yaw_start + ang_vel * dt
     lin_vel = (motion[0, :, 31:33] * flow_net.lin_vel_std[None, :] + flow_net.lin_vel_mean[None, :]).cpu().numpy()
+    joint_pos = (motion[0, :, :29] * flow_net.joint_pos_std[None, :] + flow_net.joint_pos_mean[None, :]).cpu().numpy()
     # convert lin_vel_xy_projected velocity to root_pos
     root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
     cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

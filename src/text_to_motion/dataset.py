@@ -18,6 +18,18 @@ class HumanoidDataset(Dataset):
         self.mean_velocity: torch.Tensor = torch.zeros(2)
         self.mean_velocity_squared: torch.Tensor = torch.zeros(2)
         self.std_velocity: torch.Tensor = torch.ones(2)
+        self.mean_joint_pos: torch.Tensor = torch.zeros(29)
+        self.mean_joint_pos_squared: torch.Tensor = torch.zeros(29)
+        self.std_joint_pos: torch.Tensor = torch.ones(29)
+        self.mean_ang_vel: torch.Tensor = torch.zeros(1)
+        self.mean_ang_vel_squared: torch.Tensor = torch.zeros(1)
+        self.std_ang_vel: torch.Tensor = torch.ones(1)
+        self.mean_roll: torch.Tensor = torch.zeros(1)
+        self.mean_roll_squared: torch.Tensor = torch.ones(1)
+        self.std_roll: torch.Tensor = torch.ones(1)
+        self.mean_pitch: torch.Tensor = torch.zeros(1)
+        self.mean_pitch_squared: torch.Tensor = torch.zeros(1)
+        self.std_pitch: torch.Tensor = torch.ones(1)
         
         total_len = 0
         pure_motions_len = 0
@@ -27,13 +39,33 @@ class HumanoidDataset(Dataset):
             total_len += (motion_len - self.motions_len)
             self.motions_len_cumsum.append(total_len)
             if vel_normalization:
+                self.mean_ang_vel = self.mean_ang_vel + torch.from_numpy(np.sum(self.data_dict[motion_file]['ang_vel'], axis=0)[None])
+                self.mean_ang_vel_squared = self.mean_ang_vel_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['ang_vel']**2, axis=0)[None])
+                self.mean_roll = self.mean_roll + torch.from_numpy(np.sum(self.data_dict[motion_file]['roll'], axis=0)[None])
+                self.mean_roll_squared = self.mean_roll_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['roll']**2, axis=0)[None])
+                self.mean_pitch = self.mean_pitch + torch.from_numpy(np.sum(self.data_dict[motion_file]['pitch'], axis=0)[None])
+                self.mean_pitch_squared = self.mean_pitch_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['pitch']**2, axis=0)[None])
+                self.mean_joint_pos = self.mean_joint_pos + torch.from_numpy(np.sum(self.data_dict[motion_file]['joint_pos'], axis=0))
+                self.mean_joint_pos_squared = self.mean_joint_pos_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['joint_pos']**2, axis=0))
                 self.mean_velocity = self.mean_velocity + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel'], axis=0))
                 self.mean_velocity_squared = self.mean_velocity_squared + torch.from_numpy(np.sum(self.data_dict[motion_file]['lin_vel']**2, axis=0))
         self.total_len = total_len
         if vel_normalization:
+            self.mean_ang_vel = self.mean_ang_vel / pure_motions_len
+            self.mean_ang_vel_squared = self.mean_ang_vel_squared / pure_motions_len
+            self.mean_roll = self.mean_roll / pure_motions_len
+            self.mean_roll_squared = self.mean_roll_squared / pure_motions_len
+            self.mean_pitch = self.mean_pitch / pure_motions_len
+            self.mean_pitch_squared = self.mean_pitch_squared / pure_motions_len
             self.mean_velocity = self.mean_velocity / pure_motions_len
             self.mean_velocity_squared = self.mean_velocity_squared / pure_motions_len
             self.std_velocity = torch.sqrt(self.mean_velocity_squared - self.mean_velocity**2)
+            self.mean_joint_pos = self.mean_joint_pos / pure_motions_len
+            self.mean_joint_pos_squared = self.mean_joint_pos_squared / pure_motions_len
+            self.std_joint_pos = torch.sqrt(self.mean_joint_pos_squared - self.mean_joint_pos**2)
+            self.std_ang_vel = torch.sqrt(self.mean_ang_vel_squared - self.mean_ang_vel**2)
+            self.std_roll = torch.sqrt(self.mean_roll_squared - self.mean_roll**2)
+            self.std_pitch = torch.sqrt(self.mean_pitch_squared - self.mean_pitch**2)
     
     def __len__(self,):
         return self.total_len - self.motions_len
@@ -53,9 +85,9 @@ class HumanoidDataset(Dataset):
         ang_vel = motion['ang_vel'][index_in_motion:index_in_motion + self.motions_len]
         
         return torch.cat([
-            torch.tensor(joint_pos).to(dtype=torch.float32),
-            torch.tensor(roll[:, None]).to(dtype=torch.float32),
-            torch.tensor(pitch[:, None]).to(dtype=torch.float32),
+            ((torch.tensor(joint_pos) - self.mean_joint_pos[None, :]) / self.std_joint_pos[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(roll[:, None]) - self.mean_roll[None, :]) / self.std_roll[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(pitch[:, None]) - self.mean_pitch[None, :]) / self.std_pitch[None, :]).to(dtype=torch.float32),
             ((torch.tensor(lin_vel) - self.mean_velocity[None, :]) / self.std_velocity[None, :]).to(dtype=torch.float32),
-            torch.tensor(ang_vel[:, None]).to(dtype=torch.float32),
+            ((torch.tensor(ang_vel[:, None]) - self.mean_ang_vel[None, :]) / self.std_ang_vel[None, :]).to(dtype=torch.float32),
         ], dim=-1)
