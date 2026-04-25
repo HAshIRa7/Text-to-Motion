@@ -18,9 +18,9 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config: TransformerConfig):
         super().__init__()
-        self.ln1 = nn.LayerNorm(config.hidden_dim)#RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
+        self.ln1 = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.attn = MultiHeadAttention(config)
-        self.ln2 = nn.LayerNorm(config.hidden_dim)#RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
+        self.ln2 = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.ffn = SwiGLUFeedForward(config.hidden_dim, config.intermediate_dim)
 
     def forward(

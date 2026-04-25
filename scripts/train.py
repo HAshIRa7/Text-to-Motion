@@ -17,6 +17,7 @@ print(f'joint_pos_dataset_mean: {humanoid_dataset.mean_joint_pos}, joint_pos_dat
 print(f'ang_vel_dataset_mean: {humanoid_dataset.mean_ang_vel}, ang_vel_dataset_std: {humanoid_dataset.std_ang_vel}')
 print(f'roll_dataset_mean: {humanoid_dataset.mean_roll}, roll_dataset_std: {humanoid_dataset.std_roll}')
 print(f'pitch_dataset_mean: {humanoid_dataset.mean_pitch}, pitch_dataset_std: {humanoid_dataset.std_pitch}')
+print(f'height_dataset_mean: {humanoid_dataset.mean_height}, pitch_dataset_std: {humanoid_dataset.std_height}')
 flow_net = FlowMatchingNet(
     config=config,
     lin_vel_mean=humanoid_dataset.mean_velocity,
@@ -29,30 +30,34 @@ flow_net = FlowMatchingNet(
     roll_std=humanoid_dataset.std_roll,
     pitch_mean=humanoid_dataset.mean_pitch,
     pitch_std=humanoid_dataset.std_pitch,
+    joint_vel_mean=humanoid_dataset.mean_joint_vel,
+    joint_vel_std=humanoid_dataset.std_joint_vel,
+    height_mean=humanoid_dataset.mean_height,
+    height_std=humanoid_dataset.std_height,
 ).to(device)
 optimizer = torch.optim.Adam(flow_net.parameters(), lr=3e-4)
 save_folder = 'checkpoints'
-
 for epoch in tqdm(range(1000)):
     loss_sum = 0
-    for idx, batch in enumerate(humanoid_dataloader):
+    for idx, batch in tqdm(enumerate(humanoid_dataloader)):
         x_1 = batch.to(device)
         x_0 = torch.randn_like(x_1)
         
         t = torch.rand(batch.shape[0], 1, 1).to(device=device)
+        
         x_t = t * x_1 + (1 - t) * x_0
         
         optimizer.zero_grad()
-        loss = ((flow_net(x_t, t) - (x_1 - x_0))**2).mean()
+        u_pred = flow_net(x_t, t)
+        loss = torch.mean((u_pred - (x_1 - x_0))**2) 
         loss.backward()
         optimizer.step()
         
         loss_sum += loss.item()
         
-    print(f'epoch: {epoch}, current_loss: {np.round(loss_sum / len(humanoid_dataloader), 4)}')
-        
-    if epoch % 5 == 0:
-        os.makedirs(save_folder, exist_ok=True)
-        torch.save(flow_net.state_dict(), f'{save_folder}/model_weight_{epoch}.pth')
+        if idx % 1000 == 0:
+            print(f'epoch: {epoch}, current_loss: {np.round(loss_sum / 1000, 4)}')
+            os.makedirs(save_folder, exist_ok=True)
+            torch.save(flow_net.state_dict(), f'{save_folder}/model_weight_{epoch}_{idx}.pth')
         
         

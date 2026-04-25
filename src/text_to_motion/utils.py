@@ -47,15 +47,17 @@ def convert_lin_vel_xy_to_root_pos(lin_vel_yaw_aligned: np.ndarray, quat: np.nda
     
     return root_pos
 
-def collect_data(motions_dir: str):
+def collect_data(motions_dir: str, motions_len: int):
     dct = {}
     for motion_file in os.listdir(motions_dir):
         with np.load(motions_dir +'/' + motion_file, allow_pickle=True) as data:
-            if len(data['joint_pos']) < 350:
+            if len(data['joint_pos']) < motions_len:
                 continue
             dct[motion_file] = {}
+            dct[motion_file]['height'] = data['body_pos_w'][:, 0, 2]
             dct[motion_file]['joint_names'] = list(data['joint_names'])
             dct[motion_file]['joint_pos'] = data['joint_pos']
+            dct[motion_file]['joint_vel'] = data['joint_vel']
             root_quat_w = data['body_quat_w'][:, 0]
             roll, pitch = convert_quat_to_roll_pitch(root_quat_w)
             dct[motion_file]['roll'] = roll

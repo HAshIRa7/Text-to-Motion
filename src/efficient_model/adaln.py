@@ -8,8 +8,11 @@ class TimeStepEmbedder(nn.Module):
         self.register_buffer('freqs', freqs)
         self.norm = nn.LayerNorm(dim, elementwise_affine=False)
         self.adaLN_modulation = nn.Sequential(
+            nn.Linear(dim, 2 * dim),
             nn.SiLU(),
-            nn.Linear(dim, 2 * dim, bias=True)
+            nn.Linear(2 * dim, 2 * dim),
+            nn.SiLU(),
+            nn.Linear(2 * dim, 2 * dim, bias=True)
         )
         nn.init.zeros_(self.adaLN_modulation[-1].weight)
         nn.init.zeros_(self.adaLN_modulation[-1].bias)

@@ -19,6 +19,10 @@ class FlowMatchingNet(nn.Module):
         roll_std: torch.Tensor | None = None,
         pitch_mean: torch.Tensor | None = None,
         pitch_std: torch.Tensor | None = None,
+        joint_vel_mean: torch.Tensor | None = None,
+        joint_vel_std: torch.Tensor | None = None,
+        height_mean: torch.Tensor | None = None,
+        height_std: torch.Tensor | None = None,
     ):
         super().__init__()
         self.input_dim = config.input_dim
@@ -34,6 +38,10 @@ class FlowMatchingNet(nn.Module):
         roll_std = roll_std if roll_std is not None else torch.ones(1)
         pitch_mean = pitch_mean if pitch_mean is not None else torch.zeros(1)
         pitch_std = pitch_std if pitch_std is not None else torch.ones(1)
+        height_mean = height_mean if height_mean is not None else torch.zeros(1)
+        height_std = height_std if height_std is not None else torch.ones(1)
+        joint_vel_mean = joint_vel_mean if joint_vel_mean is not None else torch.zeros(29)
+        joint_vel_std = joint_vel_std if joint_vel_std is not None else torch.ones(29)
         
         self.register_buffer("lin_vel_mean", lin_vel_mean)
         self.register_buffer("lin_vel_std", lin_vel_std)
@@ -45,6 +53,10 @@ class FlowMatchingNet(nn.Module):
         self.register_buffer("roll_std", roll_std)
         self.register_buffer("pitch_mean", pitch_mean)
         self.register_buffer("pitch_std", pitch_std)
+        self.register_buffer("joint_vel_mean", joint_vel_mean)
+        self.register_buffer("joint_vel_std", joint_vel_std)
+        self.register_buffer("height_mean", height_mean)
+        self.register_buffer("height_std", height_std)
         
         self.flow_net = EfficientTransformer(config)
         
@@ -53,14 +65,16 @@ class FlowMatchingNet(nn.Module):
         x - size batch_size x seq_len x (input_dim - 1)
         t - size batch_size x 1 x 1
         '''
-        return self.flow_net(x, t[:, 0, 0])
+        flow_net_output = self.flow_net(x, t[:, 0, 0]) # flow_net_output: batch_size x seq_len x output_dim
+        return flow_net_output
+        
     
     def step(self, x: torch.Tensor, t_start: torch.Tensor, t_end: torch.Tensor):
         x_next = x + self.forward(x, t_start[:, None, None]) * (t_end - t_start)[:, None, None]
         return x_next
     
     def midpoint_step(self, x: torch.Tensor, t_start: torch.Tensor, t_end: torch.Tensor):
-        midpoint_vel = self.forward(x + self.forward(x, t_start[:, None, None]) * ((t_end - t_start)[:, None, None]) / 2, (t_start + (t_end - t_start) / 2)[:, None, None])
+        midpoint_vel = self.forward((x + self.forward(x, t_start[:, None, None]) * ((t_end - t_start)[:, None, None]) / 2), (t_start + (t_end - t_start) / 2)[:, None, None])
         x_next = x + (t_end - t_start)[:, None, None] * midpoint_vel
         return x_next
         

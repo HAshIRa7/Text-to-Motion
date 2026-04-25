@@ -3,11 +3,11 @@ from dataclasses import dataclass
 
 @dataclass
 class TransformerConfig:
-    input_dim: int = 34
+    input_dim: int = 64
     hidden_dim: int = 512
-    output_dim: int = 34
+    output_dim: int = 64
     num_heads: int = 8
-    num_layers: int = 2
+    num_layers: int = 6
     intermediate_dim: int = 1024
     max_seq_len: int = 350
     dropout: float = 0.0
