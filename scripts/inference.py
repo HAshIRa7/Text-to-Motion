@@ -1,20 +1,36 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from text_to_motion import FlowMatchingNet
+from text_to_motion import FlowMatchingNet, TransformerConfig
 from text_to_motion import (
     convert_roll_pitch_ang_vel_to_quat,
     convert_lin_vel_xy_to_root_pos,
 )
 from datetime import datetime
 import os
+import math
 
-input_shape=35
-hidden_dim=256
-output_shape=34
-device = 'cuda:1'
+def edm_schedule(n_points):
+    sigma_min = 0.002
+    sigma_max = 80.0
+    ro = 7.0
+
+    sigma_min_pow = sigma_min**(1/ro)
+    sigma_max_pow = sigma_max**(1/ro)
+
+    idx = torch.linspace(0, n_points - 1, n_points - 1) / (n_points - 1)
+    sigmas = torch.zeros((n_points))
+    sigmas[:-1] = (sigma_max_pow + idx * (sigma_min_pow - sigma_max_pow))**(ro)
+    sigmas *= 1 / (sigma_max - sigma_min)
+    sigmas -= sigma_min * 1 / (sigma_max - sigma_min)
+    sigmas = torch.clamp(sigmas, 0, 1)
+    sigmas[-1] = 0
+    
+    return 1 - sigmas
+
+device = 'cuda:0'
 checkpoint_path='checkpoints'
-motion_len = 500
+motion_len = 350
 n_steps = 200
 save_dir = 'generated_motions'
 joint_names = [
@@ -49,20 +65,26 @@ joint_names = [
     'right_wrist_yaw_joint'
 ]
 
-flow_net = FlowMatchingNet(input_dim=input_shape, hidden_dim=hidden_dim, output_dim=output_shape).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_90.pth', weights_only=True)
+config = TransformerConfig()
+flow_net = FlowMatchingNet(config).to(device)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_0.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
 
-print(flow_net.lin_vel_mean, flow_net.lin_vel_std)
+calculate_parameters = 0
+for parameter in flow_net.parameters():
+    calculate_parameters += math.prod(parameter.shape)
+    
+print(f'total net parameters: {calculate_parameters / 10**6}')
 
-timesteps = torch.linspace(0, 1, n_steps + 1).to(device=device)
+print(flow_net)
 
-motion = torch.randn(1, 500, input_shape - 1).to(device=device)
+timesteps = edm_schedule(n_steps + 1).to(device=device)
+motion = torch.randn(1, motion_len, config.output_dim).to(device=device)
 with torch.no_grad():
     for it in range(n_steps):
-        motion = flow_net.step(motion, timesteps[it][None], timesteps[it + 1][None])
-    
+        motion = flow_net.midpoint_step(motion, timesteps[it][None], timesteps[it + 1][None])
+        
 def postprocess_motion(motion: torch.tensor, save_dir: str):
     '''
     return format .npz file with keys
@@ -78,22 +100,21 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
     ang_vel - motion[33:]
     '''
     
-    joint_pos = motion[0, :, :29].cpu().numpy()
-    ang_vel = motion[0, :, 33].cpu().numpy()
-    roll = motion[0, :, 29].cpu().numpy()
-    pitch = motion[0, :, 30].cpu().numpy()
+    height = (motion[0, :, 63:64] * flow_net.height_std[None, :] + flow_net.height_mean[None, :])[:, 0].cpu().numpy()
+    ang_vel = (motion[0, :, 33:34] * flow_net.ang_vel_std[None, :] + flow_net.ang_vel_mean[None, :])[:, 0].cpu().numpy()
+    roll = (motion[0, :, 29:30] * flow_net.roll_std[None, :] + flow_net.roll_mean[None, :])[:, 0].cpu().numpy()
+    pitch = (motion[0, :, 30:31] * flow_net.pitch_std[None, :] + flow_net.pitch_mean[None, :])[:, 0].cpu().numpy()
     quat_w = convert_roll_pitch_ang_vel_to_quat(roll, pitch, ang_vel)[:, None]
-    # convert roll, pitch, yaw to quat
-    # yaw_start == 0, yaw_new = yaw_start + ang_vel * dt
     lin_vel = (motion[0, :, 31:33] * flow_net.lin_vel_std[None, :] + flow_net.lin_vel_mean[None, :]).cpu().numpy()
-    # convert lin_vel_xy_projected velocity to root_pos
+    joint_pos = (motion[0, :, :29] * flow_net.joint_pos_std[None, :] + flow_net.joint_pos_mean[None, :]).cpu().numpy()
     root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
-
+    root_pos[:, 0, 2] = height
     cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     os.makedirs(save_dir, exist_ok=True)
     np.savez(
         f'{save_dir}/generated_motion_{cur_date}.npz',
         joint_names=joint_names,
+        lin_vel=lin_vel,
         joint_pos=joint_pos,
         body_pos_w=root_pos,
         body_quat_w=quat_w,
