@@ -26,9 +26,8 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x), attention_mask)
+        x = x + self.attn(self.ln1(x))
         x = x + self.ffn(self.ln2(x))
         return x
 
@@ -67,7 +66,6 @@ class EfficientTransformer(nn.Module):
         self,
         x: torch.Tensor,
         t: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -80,7 +78,7 @@ class EfficientTransformer(nn.Module):
         """
         x = self.in_linear(x)
         for idx, layer in enumerate(self.layers):
-            x = layer(x, attention_mask)
+            x = layer(x)
             x = self.adaln_layers[idx](x, t)
         x = self.out_linear(x)
         return x.float()

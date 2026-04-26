@@ -67,7 +67,7 @@ joint_names = [
 
 config = TransformerConfig()
 flow_net = FlowMatchingNet(config).to(device)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_0.pth', weights_only=True)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_19000.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
 
