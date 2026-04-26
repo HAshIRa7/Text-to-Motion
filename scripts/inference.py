@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from text_to_motion import FlowMatchingNet, TransformerConfig
+from text_to_motion import FlowMatchingNet, TransformerConfig, EmbedderModel
 from text_to_motion import (
     convert_roll_pitch_ang_vel_to_quat,
     convert_lin_vel_xy_to_root_pos,
@@ -29,6 +29,7 @@ def edm_schedule(n_points):
     return 1 - sigmas
 
 device = 'cuda:0'
+dtype=torch.bfloat16
 checkpoint_path='checkpoints'
 motion_len = 350
 n_steps = 200
@@ -67,6 +68,7 @@ joint_names = [
 
 config = TransformerConfig()
 flow_net = FlowMatchingNet(config).to(device)
+embedder_model = EmbedderModel()
 state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_19000.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net.eval()
@@ -76,14 +78,16 @@ for parameter in flow_net.parameters():
     calculate_parameters += math.prod(parameter.shape)
     
 print(f'total net parameters: {calculate_parameters / 10**6}')
-
 print(flow_net)
 
-timesteps = edm_schedule(n_steps + 1).to(device=device)
-motion = torch.randn(1, motion_len, config.output_dim).to(device=device)
-with torch.no_grad():
-    for it in range(n_steps):
-        motion = flow_net.midpoint_step(motion, timesteps[it][None], timesteps[it + 1][None])
+def infer(text: str):
+    timesteps = edm_schedule(n_steps + 1).to(dtype=dtype, device=device)
+    embed = embedder_model.encode_text_batch([text], inference=True).to(dtype=dtype, device=device)
+    motion = torch.randn(1, motion_len, config.output_dim).to(device=device)
+    with torch.no_grad():
+        for it in range(n_steps):
+            motion = flow_net.midpoint_step(motion, embed, timesteps[it][None], timesteps[it + 1][None])
+    return motion
         
 def postprocess_motion(motion: torch.tensor, save_dir: str):
     '''
@@ -119,5 +123,5 @@ def postprocess_motion(motion: torch.tensor, save_dir: str):
         body_pos_w=root_pos,
         body_quat_w=quat_w,
     )
-
+motion = infer('walk')
 postprocess_motion(motion, save_dir)

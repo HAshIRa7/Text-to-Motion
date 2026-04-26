@@ -1,7 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from text_to_motion import FlowMatchingNet, HumanoidDataset, TransformerConfig
+from text_to_motion import (
+    FlowMatchingNet, 
+    HumanoidDataset,
+    TransformerConfig, 
+    make_collate_fn,
+    EmbedderModel,
+)
 from torch.utils.data import DataLoader
 import os
 import bisect
@@ -9,10 +15,11 @@ from tqdm import tqdm
 
 device = 'cuda:0'
 dtype=torch.bfloat16
+embedder_model = EmbedderModel()
 humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 350, vel_normalization=True)
-humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=256, shuffle=True, drop_last=False, num_workers=4)
+humanoid_dataloader = DataLoader(humanoid_dataset, batch_size=256, collate_fn=make_collate_fn(embedder_model), shuffle=True, drop_last=False, num_workers=4)
 batch = next(iter(humanoid_dataloader))
-config = TransformerConfig()
+config = TransformerConfig(input_dim=batch.shape[-1], embed_dim=embedder_model.embed_dim, output_dim=batch.shape[-1])
 print(f'lin_vel_dataset_mean: {humanoid_dataset.mean_velocity}, lin_vel_dataset_std: {humanoid_dataset.std_velocity}')
 print(f'joint_pos_dataset_mean: {humanoid_dataset.mean_joint_pos}, joint_pos_dataset_std: {humanoid_dataset.std_joint_pos}')
 print(f'ang_vel_dataset_mean: {humanoid_dataset.mean_ang_vel}, ang_vel_dataset_std: {humanoid_dataset.std_ang_vel}')
@@ -41,7 +48,9 @@ save_folder = 'checkpoints'
 for epoch in tqdm(range(1000)):
     loss_sum = 0
     for idx, batch in tqdm(enumerate(humanoid_dataloader)):
-        x_1 = batch.to(dtype=dtype, device=device)
+        x_1, cond = batch
+        x_1 = x_1.to(device=device, dtype=dtype)
+        cond = cond.to(device=device, dtype=dtype)
         x_0 = torch.randn_like(x_1)
         
         t = torch.rand(batch.shape[0], 1, 1).to(dtype=dtype, device=device)
@@ -49,7 +58,7 @@ for epoch in tqdm(range(1000)):
         x_t = t * x_1 + (1 - t) * x_0
         
         optimizer.zero_grad()
-        u_pred = flow_net(x_t, t)
+        u_pred = flow_net(x_t, cond, t)
         loss = torch.mean((u_pred - (x_1 - x_0))**2) 
         loss.backward()
         optimizer.step()

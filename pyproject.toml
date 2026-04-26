@@ -15,7 +15,9 @@ dependencies = [
     "liger-kernel==0.7.0",
     "torch",
     "flash-attn==2.8.3",
-    "psutil"
+    "psutil",
+    "transformers",
+    "vllm>=0.17.0"
 ]
 
 [tool.uv.sources]

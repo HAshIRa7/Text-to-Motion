@@ -4,6 +4,8 @@ from torch.utils.data import Dataset
 from .utils import collect_data
 import bisect
 
+from .embedder_model import EmbedderModel
+
 
 class HumanoidDataset(Dataset):
     def __init__(self, motions_folder: str, motions_len: int = 350, vel_normalization=False):
@@ -102,7 +104,7 @@ class HumanoidDataset(Dataset):
         joint_vel = motion['joint_vel'][index_in_motion:index_in_motion + self.motions_len]
         height = motion['height'][index_in_motion:index_in_motion + self.motions_len]
         
-        return torch.cat([
+        return (torch.cat([
             ((torch.tensor(joint_pos) - self.mean_joint_pos[None, :]) / self.std_joint_pos[None, :]).to(dtype=torch.float32),
             ((torch.tensor(roll[:, None]) - self.mean_roll[None, :]) / self.std_roll[None, :]).to(dtype=torch.float32),
             ((torch.tensor(pitch[:, None]) - self.mean_pitch[None, :]) / self.std_pitch[None, :]).to(dtype=torch.float32),
@@ -110,4 +112,16 @@ class HumanoidDataset(Dataset):
             ((torch.tensor(ang_vel[:, None]) - self.mean_ang_vel[None, :]) / self.std_ang_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(joint_vel) - self.mean_joint_vel[None, :]) / self.std_joint_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(height[:, None]) - self.mean_height[None, :]) / self.std_height[None, :]).to(dtype=torch.float32),
-        ], dim=-1)
+        ], dim=-1), motion['text'])
+    
+    
+def make_collate_fn(embedder: EmbedderModel):
+    
+    def collate_fn(batch: list[tuple[torch.Tensor, str]]) -> tuple[torch.Tensor, torch.Tensor]:
+        proptio_data, text_data = zip(*batch)
+        text_embeddings = embedder.encode_text_batch(list(text_data))
+        proprio_tensor_data = torch.stack(list(proptio_data))
+        
+        return proprio_tensor_data, text_embeddings
+        
+    return collate_fn

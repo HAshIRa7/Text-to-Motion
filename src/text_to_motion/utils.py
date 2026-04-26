@@ -54,6 +54,7 @@ def collect_data(motions_dir: str, motions_len: int):
             if len(data['joint_pos']) < motions_len:
                 continue
             dct[motion_file] = {}
+            dct[motion_file]['text'] = data['text'] if 'text' in data else 'Person ' + ' '.join(motion_file.split('.')[0].split('_'))
             dct[motion_file]['height'] = data['body_pos_w'][:, 0, 2]
             dct[motion_file]['joint_names'] = list(data['joint_names'])
             dct[motion_file]['joint_pos'] = data['joint_pos']

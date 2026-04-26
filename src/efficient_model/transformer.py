@@ -10,7 +10,7 @@ from text_to_motion.config import TransformerConfig
 from efficient_model.norm import RMSNorm
 from efficient_model.swiglu import SwiGLUFeedForward
 from efficient_model.attention import MultiHeadAttention
-from efficient_model.adaln import TimeStepEmbedder
+from efficient_model.adaln import TimeStepEmbedder, ConditionEmbedder
 
 
 class TransformerBlock(nn.Module):
@@ -49,6 +49,10 @@ class EfficientTransformer(nn.Module):
         self.adaln_layers = nn.ModuleList([
             TimeStepEmbedder(config.hidden_dim) for _ in range(config.num_layers)
         ])
+        
+        self.text_adaln_layers = nn.ModuleList([
+            ConditionEmbedder(config.embed_dim, config.hidden_dim) for _ in range(config.num_layers)
+        ])
 
         # self.ln_f = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.out_linear = nn.Linear(config.hidden_dim, config.output_dim)
@@ -65,11 +69,13 @@ class EfficientTransformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        cond: torch.Tensor,
         t: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
             x: (B, S, input_dim) token indices
+            cond: (B, embed_dim)
             t: (B,)
             attention_mask: optional attention mask
 
@@ -80,5 +86,6 @@ class EfficientTransformer(nn.Module):
         for idx, layer in enumerate(self.layers):
             x = layer(x)
             x = self.adaln_layers[idx](x, t)
+            x = self.text_adaln_layers[idx](x, cond)
         x = self.out_linear(x)
         return x.float()

@@ -27,4 +27,29 @@ class TimeStepEmbedder(nn.Module):
         gamma, beta = self.adaLN_modulation(t_emb).chunk(2, dim=-1)
         gamma = gamma.unsqueeze(dim=1)
         beta = beta.unsqueeze(dim=1)
+        return self.norm(x) * (1 + gamma) + beta 
+    
+    
+class ConditionEmbedder(nn.Module):
+    
+    def __init__(self, embed_dim, hidden_dim):
+        
+        self.module = nn.Sequential(
+            nn.Linear(embed_dim, 2 * hidden_dim),
+            nn.SiLU(),
+            nn.Linear(2 * hidden_dim, 2 * hidden_dim),
+            nn.SiLU(),
+            nn.Linear(2 * hidden_dim, 2 * hidden_dim),
+            nn.SiLU(),
+            nn.Linear(2 * hidden_dim, 2 * hidden_dim),
+        )
+        self.norm = nn.LayerNorm(hidden_dim, elementwise_affine=False)
+        
+        nn.init.zeros_(self.adaLN_modulation[-1].weight)
+        nn.init.zeros_(self.adaLN_modulation[-1].bias)
+        
+    def forward(self, x: torch.Tensor, embeding: torch.Tensor):
+        gamma, beta = self.module(embeding).chunk(2, dim=-1)
+        gamma = gamma.unsqueeze(dim=1)
+        beta = beta.unsqueeze(dim=1)
         return self.norm(x) * (1 + gamma) + beta
