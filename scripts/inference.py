@@ -67,7 +67,7 @@ joint_names = [
 ]
 
 config = TransformerConfig()
-flow_net = FlowMatchingNet(config).to(device)
+flow_net = FlowMatchingNet(config).to(device=device, dtype=dtype)
 embedder_model = EmbedderModel()
 state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_19000.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
@@ -83,7 +83,7 @@ print(flow_net)
 def infer(text: str):
     timesteps = edm_schedule(n_steps + 1).to(dtype=dtype, device=device)
     embed = embedder_model.encode_text_batch([text], inference=True).to(dtype=dtype, device=device)
-    motion = torch.randn(1, motion_len, config.output_dim).to(device=device)
+    motion = torch.randn(1, motion_len, config.output_dim).to(device=device, dtype=dtype)
     with torch.no_grad():
         for it in range(n_steps):
             motion = flow_net.midpoint_step(motion, embed, timesteps[it][None], timesteps[it + 1][None])

@@ -2019,7 +2019,7 @@ name = "manifold3d"
 version = "3.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b0/fd/4dfc246e076e3912c45a821764f4de8b6c8117fa36fc67f8e44bf9dfe59b/manifold3d-3.4.1.tar.gz", hash = "sha256:b517927e2c15dc52169fff0cd12e1949eceb4ca49f3a5b8c0568b1116a561ab1", size = 269275, upload-time = "2026-03-24T06:22:40.062Z" }
 wheels = [
@@ -4974,6 +4974,7 @@ name = "text-to-motion"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "flash-attn" },
     { name = "liger-kernel" },
     { name = "packaging" },
     { name = "psutil" },
@@ -4992,6 +4993,7 @@ flash = [
 
 [package.metadata]
 requires-dist = [
+    { name = "flash-attn", specifier = "==2.8.3" },
     { name = "flash-attn", marker = "extra == 'flash'", specifier = "==2.8.3" },
     { name = "liger-kernel", specifier = "==0.7.0" },
     { name = "packaging", specifier = "==26.0" },
