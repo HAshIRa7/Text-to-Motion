@@ -129,6 +129,7 @@ class MemoryEfficientSwiGLUMLP(torch.autograd.Function):
     """
     
     @staticmethod
+    @torch.amp.custom_fwd(device_type='cuda')
     def forward(ctx, x, w_gate, w_up, w_down, alpha, limit, sum_compute, multi):
         gate = x @ w_gate.T
         up = x @ w_up.T
@@ -147,8 +148,8 @@ class MemoryEfficientSwiGLUMLP(torch.autograd.Function):
     
     
     @staticmethod
+    @torch.amp.custom_bwd(device_type='cuda')
     def backward(ctx, grad_output):
-        
         x, gate, up, w_gate, w_up, w_down = ctx.saved_tensors
         alpha = ctx.alpha
         limit = ctx.limit

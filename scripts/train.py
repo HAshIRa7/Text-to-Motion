@@ -13,7 +13,7 @@ import bisect
 from tqdm import tqdm
 
 device = 'cuda:0'
-dtype=torch.bfloat16
+dtype=torch.float32
 humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 350, vel_normalization=True)
 null_token_embedding = humanoid_dataset.null_token_embedding
 humanoid_dataloader = DataLoader(
@@ -50,7 +50,9 @@ flow_net = FlowMatchingNet(
     height_std=humanoid_dataset.std_height,
 ).to(dtype=dtype, device=device)
 optimizer = torch.optim.Adam(flow_net.parameters(), lr=3e-4)
+optimizer.zero_grad()
 save_folder = 'checkpoints'
+scaler = torch.amp.GradScaler('cuda')
 for epoch in tqdm(range(1000)):
     loss_sum = 0
     for idx, batch in tqdm(enumerate(humanoid_dataloader)):
@@ -63,12 +65,13 @@ for epoch in tqdm(range(1000)):
         
         x_t = t * x_1 + (1 - t) * x_0
         
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            u_pred = flow_net(x_t, cond, t)
+            loss = torch.mean((u_pred - (x_1 - x_0))**2) 
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         optimizer.zero_grad()
-        u_pred = flow_net(x_t, cond, t)
-        loss = torch.mean((u_pred - (x_1 - x_0))**2) 
-        loss.backward()
-        optimizer.step()
-        
         loss_sum += loss.item()
         
         if idx % 1000 == 0:
