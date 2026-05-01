@@ -88,4 +88,4 @@ class EfficientTransformer(nn.Module):
             x = self.adaln_layers[idx](x, t)
             x = self.text_adaln_layers[idx](x, cond)
         x = self.out_linear(x)
-        return x.float()
+        return x

@@ -7,6 +7,18 @@ from .math import (
     convert_quat_to_roll_pitch,
     quat_from_euler_xyz,
 )
+from tqdm.auto import tqdm
+import torch
+
+def last_token_pool(last_hidden_states: torch.Tensor,
+                 attention_mask: torch.Tensor) -> torch.Tensor:
+    left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
 def convert_lin_vel_to_xy(quat: np.ndarray, lin_vel_w: np.ndarray):
     
@@ -49,12 +61,12 @@ def convert_lin_vel_xy_to_root_pos(lin_vel_yaw_aligned: np.ndarray, quat: np.nda
 
 def collect_data(motions_dir: str, motions_len: int):
     dct = {}
-    for motion_file in os.listdir(motions_dir):
+    for motion_file in tqdm(os.listdir(motions_dir)):
         with np.load(motions_dir +'/' + motion_file, allow_pickle=True) as data:
             if len(data['joint_pos']) < motions_len:
                 continue
             dct[motion_file] = {}
-            dct[motion_file]['text'] = data['text'] if 'text' in data else 'Person ' + ' '.join(motion_file.split('.')[0].split('_'))
+            dct[motion_file]['text'] = data['text'].item() if 'text' in data else 'Person ' + ' '.join(motion_file.split('.')[0].split('_'))
             dct[motion_file]['height'] = data['body_pos_w'][:, 0, 2]
             dct[motion_file]['joint_names'] = list(data['joint_names'])
             dct[motion_file]['joint_pos'] = data['joint_pos']

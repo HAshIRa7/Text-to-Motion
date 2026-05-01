@@ -1,7 +1,10 @@
 #!/bin/bash
-for i in {1..20}; do
-    echo "▶️ Running inference $i/20..."
-    python scripts/inference.py
-    # Bash automatically waits for the command to finish before the next loop
+num=$1
+for ((i=1; i<=num; i++)); do
+    echo "▶️ Running inference $i/$num..."
+    if ! python3 scripts/inference.py; then
+        echo "❌ Run $i failed!"
+        exit 1
+    fi
 done
-echo "✅ All 20 runs completed!"
+echo "✅ All $num runs completed!"

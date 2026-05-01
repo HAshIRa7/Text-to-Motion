@@ -86,4 +86,19 @@ class FlowMatchingNet(nn.Module):
         )
         x_next = x + (t_end - t_start)[:, None, None] * midpoint_vel
         return x_next
+    
+    def guidance_step(
+        self, 
+        x: torch.Tensor, 
+        cond: torch.Tensor, 
+        uncond: torch.Tensor, 
+        t_start: torch.Tensor, 
+        t_end: torch.Tensor,
+        guidance_scale: int = 3
+    ):
         
+        cond_vel = self.forward(x, cond, t_start[:, None, None])
+        uncond_vel = self.forward(x, uncond, t_start[:, None, None])
+        guidance_vel = (1 - guidance_scale) * uncond_vel + guidance_scale * cond_vel
+        x_next = x + guidance_vel * (t_end - t_start)[:, None, None]
+        return x_next
