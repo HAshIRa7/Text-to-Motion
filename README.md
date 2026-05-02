@@ -4,7 +4,7 @@ This is project for generating reference motions on G1 Unitree humanoid robot us
 In this repository you find training scripts, architecture and inference code with vizualization using [`Viser`](https://viser.studio/main/). Solution build on flow-matching generation with 31M parameters decoder like transformer with Triton kernel optimizations for efficient training and inference. Requiremets: NVIDIA A100-SXM4-80GB
 
 <p align="center">
-  <video src="./images/walk_run_dance.mp4" width="100%" autoplay loop muted playsinline></video>
+  <video src="https://github.com/HAshIRa7/Text-to-Motion/blob/main/images/walk_run_dance.mp4" width="100%" autoplay loop muted playsinline></video>
 </p>
 
 ## Quick start
