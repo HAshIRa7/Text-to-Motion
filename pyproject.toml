@@ -6,18 +6,23 @@ readme = "README.md"
 authors = [
     { name = "Egor", email = "egormipt@yandex.ru" }
 ]
-requires-python = ">=3.10"
+requires-python = "==3.12"
 dependencies = [
     "viser",
     "tyro",
     "robot_descriptions",
     "packaging==26.0",
     "liger-kernel==0.7.0",
+    "flash-attn==2.8.3",
     "torch",
+    "psutil",
+    "transformers",
+    "vllm>=0.17.0"
 ]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
+flash-attn = { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.0/flash_attn-2.8.3+cu128torch2.10-cp312-cp312-linux_x86_64.whl" }
 
 [tool.setuptools.packages.find]
 include = ["efficient_model*"]
@@ -29,15 +34,6 @@ explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-
-[project.optional-dependencies]
-flash = [
-    "flash-attn==2.8.3",
-]
-
-[tool.uv]
-# flash-attn requires torch to be installed first and needs --no-build-isolation
-no-build-isolation-package = ["flash-attn"]
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]

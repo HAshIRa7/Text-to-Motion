@@ -10,7 +10,7 @@ from text_to_motion.config import TransformerConfig
 from efficient_model.norm import RMSNorm
 from efficient_model.swiglu import SwiGLUFeedForward
 from efficient_model.attention import MultiHeadAttention
-from efficient_model.adaln import TimeStepEmbedder
+from efficient_model.adaln import TimeStepEmbedder, ConditionEmbedder
 
 
 class TransformerBlock(nn.Module):
@@ -26,9 +26,8 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x), attention_mask)
+        x = x + self.attn(self.ln1(x))
         x = x + self.ffn(self.ln2(x))
         return x
 
@@ -50,6 +49,10 @@ class EfficientTransformer(nn.Module):
         self.adaln_layers = nn.ModuleList([
             TimeStepEmbedder(config.hidden_dim) for _ in range(config.num_layers)
         ])
+        
+        self.text_adaln_layers = nn.ModuleList([
+            ConditionEmbedder(config.embed_dim, config.hidden_dim) for _ in range(config.num_layers)
+        ])
 
         # self.ln_f = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.out_linear = nn.Linear(config.hidden_dim, config.output_dim)
@@ -66,12 +69,13 @@ class EfficientTransformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        cond: torch.Tensor,
         t: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
             x: (B, S, input_dim) token indices
+            cond: (B, embed_dim)
             t: (B,)
             attention_mask: optional attention mask
 
@@ -80,7 +84,8 @@ class EfficientTransformer(nn.Module):
         """
         x = self.in_linear(x)
         for idx, layer in enumerate(self.layers):
-            x = layer(x, attention_mask)
+            x = layer(x)
             x = self.adaln_layers[idx](x, t)
+            x = self.text_adaln_layers[idx](x, cond)
         x = self.out_linear(x)
-        return x.float()
+        return x

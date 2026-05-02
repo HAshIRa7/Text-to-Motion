@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class TransformerConfig:
     input_dim: int = 64
+    embed_dim: int = 2560
     hidden_dim: int = 512
     output_dim: int = 64
     num_heads: int = 8

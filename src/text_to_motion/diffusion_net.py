@@ -60,12 +60,13 @@ class FlowMatchingNet(nn.Module):
         
         self.flow_net = EfficientTransformer(config)
         
-    def forward(self, x: torch.Tensor, t: torch.tensor):
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.tensor):
         '''
         x - size batch_size x seq_len x (input_dim - 1)
+        cond - size batch_size x embed_dim
         t - size batch_size x 1 x 1
         '''
-        flow_net_output = self.flow_net(x, t[:, 0, 0]) # flow_net_output: batch_size x seq_len x output_dim
+        flow_net_output = self.flow_net(x, cond, t[:, 0, 0]) # flow_net_output: batch_size x seq_len x output_dim
         return flow_net_output
         
     
@@ -73,8 +74,31 @@ class FlowMatchingNet(nn.Module):
         x_next = x + self.forward(x, t_start[:, None, None]) * (t_end - t_start)[:, None, None]
         return x_next
     
-    def midpoint_step(self, x: torch.Tensor, t_start: torch.Tensor, t_end: torch.Tensor):
-        midpoint_vel = self.forward((x + self.forward(x, t_start[:, None, None]) * ((t_end - t_start)[:, None, None]) / 2), (t_start + (t_end - t_start) / 2)[:, None, None])
+    def midpoint_step(self, x: torch.Tensor, cond: torch.Tensor, t_start: torch.Tensor, t_end: torch.Tensor):
+        midpoint_vel = self.forward(
+            (x + self.forward(
+                x,
+                cond,
+                t_start[:, None, None]) * ((t_end - t_start)[:, None, None]) / 2
+            ),
+            cond,
+            (t_start + (t_end - t_start) / 2)[:, None, None]
+        )
         x_next = x + (t_end - t_start)[:, None, None] * midpoint_vel
         return x_next
+    
+    def guidance_step(
+        self, 
+        x: torch.Tensor, 
+        cond: torch.Tensor, 
+        uncond: torch.Tensor, 
+        t_start: torch.Tensor, 
+        t_end: torch.Tensor,
+        guidance_scale: int = 3
+    ):
         
+        cond_vel = self.forward(x, cond, t_start[:, None, None])
+        uncond_vel = self.forward(x, uncond, t_start[:, None, None])
+        guidance_vel = (1 - guidance_scale) * uncond_vel + guidance_scale * cond_vel
+        x_next = x + guidance_vel * (t_end - t_start)[:, None, None]
+        return x_next
