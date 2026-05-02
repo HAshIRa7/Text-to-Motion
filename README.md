@@ -6,10 +6,16 @@ In this repository you find training scripts, architecture and inference code wi
 <table>
   <tr>
     <td align="center">
-      <img src="images/walk_dance_run.gif" width="450" alt="Walk, run, dance">
+      <video width="3000" controls loop muted playsinline>
+        <source src="images/walk_run_dance.mp4" type="video/mp4">
+      </video>
+      <p align="center"><strong>📝 Walk, Run, Dance</strong></p>
     </td>
     <td align="center">
-      <img src="images/stay_on_one_leg.gif" width="450" alt="Stay on one leg">
+      <video width="3000" controls loop muted playsinline>
+        <source src="images/stay_on_one_leg.mp4" type="video/mp4">
+      </video>
+      <p align="center"><strong>📝 Stay on one leg</strong></p>
     </td>
   </tr>
 </table>
