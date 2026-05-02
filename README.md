@@ -3,7 +3,16 @@
 This is project for generating reference motions on G1 Unitree humanoid robot using text prompts. Can be used for synthetic data generation for training WBC or VLA.
 In this repository you find training scripts, architecture and inference code with vizualization using [`Viser`](https://viser.studio/main/). Solution build on flow-matching generation with 31M parameters decoder like transformer with Triton kernel optimizations for efficient training and inference. Requiremets: NVIDIA A100-SXM4-80GB
 
-![results](vizer_results_small.gif)
+<table>
+  <tr>
+    <td align="center">
+      <img src="images/walk_dance_run.gif" width="450" alt="Walk, run, dance">
+    </td>
+    <td align="center">
+      <img src="images/stay_on_one_leg.gif" width="450" alt="Stay on one leg">
+    </td>
+  </tr>
+</table>
 
 ## Quick start
 
