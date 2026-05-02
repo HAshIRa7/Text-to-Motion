@@ -18,7 +18,7 @@ humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_len = 350, 
 null_token_embedding = humanoid_dataset.null_token_embedding
 humanoid_dataloader = DataLoader(
     humanoid_dataset, 
-    batch_size=256, 
+    batch_size=512, 
     collate_fn=make_collate_fn(null_token_embedding), 
     shuffle=True, 
     drop_last=False, 
@@ -49,10 +49,10 @@ flow_net = FlowMatchingNet(
     height_mean=humanoid_dataset.mean_height,
     height_std=humanoid_dataset.std_height,
 ).to(dtype=dtype, device=device)
-optimizer = torch.optim.Adam(flow_net.parameters(), lr=3e-4)
+optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-4)
 optimizer.zero_grad()
 save_folder = 'checkpoints'
-scaler = torch.amp.GradScaler('cuda')
+scaler = torch.amp.GradScaler('cuda', growth_interval=30000)
 for epoch in tqdm(range(1000)):
     loss_sum = 0
     for idx, batch in tqdm(enumerate(humanoid_dataloader)):
@@ -67,12 +67,14 @@ for epoch in tqdm(range(1000)):
         
         with torch.autocast(device_type=device, dtype=torch.bfloat16):
             u_pred = flow_net(x_t, cond, t)
-            loss = torch.mean((u_pred - (x_1 - x_0))**2) 
+            loss = torch.mean((u_pred - (x_1 - x_0))**2)
+            loss_sum += loss.item()
         scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
-        loss_sum += loss.item()
         
         if idx % 1000 == 0:
             print(f'epoch: {epoch}, current_loss: {np.round(loss_sum / 1000, 4)}')

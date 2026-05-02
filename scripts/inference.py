@@ -31,7 +31,8 @@ def edm_schedule(n_points):
     return 1 - sigmas
 
 device = 'cuda:0'
-dtype=torch.bfloat16
+# dtype=torch.bfloat16
+dtype=torch.float32
 checkpoint_path='checkpoints'
 motion_len = 350
 n_steps = 200
@@ -74,7 +75,7 @@ joint_names = [
 
 config = TransformerConfig()
 flow_net = FlowMatchingNet(config)
-state_dict = torch.load(checkpoint_path + '/' + 'model_weight_1_29000.pth', weights_only=True)
+state_dict = torch.load(checkpoint_path + '/' + 'model_weight_0_25000.pth', weights_only=True)
 flow_net.load_state_dict(state_dict)
 flow_net = flow_net.to(device=device, dtype=dtype)
 flow_net.eval()
@@ -86,8 +87,28 @@ for parameter in flow_net.parameters():
     
 print(f'total net parameters: {calculate_parameters / 10**6}')
 print(flow_net)
+
+def save_motion(
+    save_dir: str,
+    joint_names: list[str],
+    lin_vel: np.ndarray,
+    joint_pos: np.ndarray,
+    root_pos: np.ndarray,
+    quat_w: np.ndarray,
+    text: str = 'walk'
+):
+    cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    os.makedirs(save_dir, exist_ok=True)
+    np.savez(
+        f'{save_dir}/gen_motion_{text}_{cur_date}.npz',
+        joint_names=joint_names,
+        lin_vel=lin_vel,
+        joint_pos=joint_pos,
+        body_pos_w=root_pos,
+        body_quat_w=quat_w,
+    )
         
-def postprocess_motion(motion: torch.tensor, save_dir: str, text: str = 'walk'):
+def postprocess_motion(motion: torch.tensor, text: str = 'walk', save: bool = True):
     '''
     return format .npz file with keys
     joint_names - list with str names
@@ -111,16 +132,25 @@ def postprocess_motion(motion: torch.tensor, save_dir: str, text: str = 'walk'):
     joint_pos = (motion[0, :, :29] * flow_net.joint_pos_std[None, :] + flow_net.joint_pos_mean[None, :]).cpu().numpy()
     root_pos = convert_lin_vel_xy_to_root_pos(lin_vel, quat_w[:, 0])[:, None]
     root_pos[:, 0, 2] = height
-    cur_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(save_dir, exist_ok=True)
-    np.savez(
-        f'{save_dir}/gen_motion_{text}_{cur_date}.npz',
-        joint_names=joint_names,
-        lin_vel=lin_vel,
-        joint_pos=joint_pos,
-        body_pos_w=root_pos,
-        body_quat_w=quat_w,
-    )
+    if save:
+        save_motion(
+            save_dir,
+            joint_names, 
+            lin_vel,
+            joint_pos,
+            root_pos,
+            quat_w,
+            text
+        ) 
+        
+    else: 
+        return {
+            'joint_names': joint_names,
+            'lin_vel': lin_vel,
+            'joint_pos': joint_pos,
+            'body_pos_w': root_pos,
+            'body_quat_w': quat_w,
+        }
 
 def infer(text: str):
     timesteps = edm_schedule(n_steps + 1).to(dtype=dtype, device=device)
@@ -140,8 +170,9 @@ def infer(text: str):
     motion = torch.randn(1, motion_len, config.output_dim).to(device=device, dtype=dtype)
     with torch.no_grad():
         for it in range(n_steps):
-            motion = flow_net.midpoint_step(motion, cond_embed, timesteps[it][None], timesteps[it + 1][None])
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                motion = flow_net.midpoint_step(motion, cond_embed, timesteps[it][None], timesteps[it + 1][None])
     
-    postprocess_motion(motion, save_dir, text)
+    postprocess_motion(motion, text)
     
-infer('A person dances')
+infer('A person runs forward')
