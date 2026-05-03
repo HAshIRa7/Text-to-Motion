@@ -17,16 +17,15 @@ class TimeStepEmbedder(nn.Module):
         nn.init.zeros_(self.adaLN_modulation[-1].weight)
         nn.init.zeros_(self.adaLN_modulation[-1].bias)
 
+    @torch.compile
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         '''
-        x - batch_size x seq_len x dim
-        t - batch_size 
+        x - total_q_len x dim
+        t - total_q_len
         '''
         t_emb = t.unsqueeze(dim=-1) * self.freqs.unsqueeze(dim=0)
         t_emb = torch.cat([torch.sin(t_emb), torch.cos(t_emb)], dim=-1)
         gamma, beta = self.adaLN_modulation(t_emb).chunk(2, dim=-1)
-        gamma = gamma.unsqueeze(dim=1)
-        beta = beta.unsqueeze(dim=1)
         return self.norm(x) * (1 + gamma) + beta 
     
     
@@ -48,8 +47,11 @@ class ConditionEmbedder(nn.Module):
         nn.init.zeros_(self.module[-1].weight)
         nn.init.zeros_(self.module[-1].bias)
         
+    @torch.compile
     def forward(self, x: torch.Tensor, embeding: torch.Tensor):
-        gamma, beta = self.module(embeding).chunk(2, dim=-1)
-        gamma = gamma.unsqueeze(dim=1)
-        beta = beta.unsqueeze(dim=1)
+        '''
+        x - total_q_len x dim
+        embedding - total_q_len x hidden_dim
+        '''
+        gamma, beta = self.module(embeding).chunk(2, dim=-1) # gamma shape - total_q_len x dim, beta shape - total_q_len x dim
         return self.norm(x) * (1 + gamma) + beta

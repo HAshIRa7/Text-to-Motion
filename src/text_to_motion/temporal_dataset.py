@@ -55,57 +55,53 @@ def Qwen_embed_data(data: Dict, device='cuda:0'):
     return list_embeddings, list_embeddings[-1]
 
 class HumanoidDataset(Dataset):
-    def __init__(self, motions_folder: str, motions_len: int = 350, vel_normalization=False):
-        self.data_dict = collect_data(motions_folder, motions_len)
+    def __init__(self, motions_folder: str, motions_len_min: int = 100, motions_len_max: int = 500, catch_temporal=False):
+        self.data_dict = collect_data(motions_folder, motions_len_min, motions_len_max)
         
         self.idx2motion = {}
         for idx, motion_file in enumerate(self.data_dict):
             self.idx2motion[idx] = motion_file
         
-        self.embeddings, self.null_token_embedding = Qwen_embed_data(self.data_dict)
-        self.motions_len = motions_len
-        self.motions_len_cumsum = []
+        if not catch_temporal:
+            self.embeddings, self.null_token_embedding = Qwen_embed_data(self.data_dict)
+        else:
+            pass
         
         for k, siz in g1_data_names2size.items():
             setattr(self, f'mean_{k}', torch.zeros(siz))
             setattr(self, f'mean_{k}_squared', torch.zeros(siz))
             setattr(self, f'std_{k}', torch.ones(siz))
-        
-        total_len = 0
         pure_motions_len = 0
         for motion_file in self.data_dict:
-            motion_len = self.data_dict[motion_file]['lin_vel'].shape[0]
-            pure_motions_len += motion_len
-            total_len += (motion_len - self.motions_len)
-            self.motions_len_cumsum.append(total_len)
+            pure_motions_len += self.data_dict[motion_file]['velocity'].shape[0]
             for k in g1_data_names2size:
-                setattr(self, f'mean_{k}', getattr(self, f'mean_{k}') + torch.from_numpy(np.sum(self.data_dict[motion_file][k], axis=0)[None]))
-                setattr(self, f'mean_{k}_squared', getattr(self, f'mean_{k}_squared') + torch.from_numpy(np.sum(self.data_dict[motion_file][k]**2, axis=0)[None]))
-        self.total_len = total_len
+                aggregated_first_momentum = np.sum(self.data_dict[motion_file][k], axis=0)
+                aggregated_second_momentum = np.sum(self.data_dict[motion_file][k]**2, axis=0) 
+                if not isinstance(aggregated_first_momentum, np.ndarray):
+                    aggregated_first_momentum = aggregated_first_momentum[None]
+                    aggregated_second_momentum = aggregated_second_momentum[None]
+                setattr(self, f'mean_{k}', getattr(self, f'mean_{k}') + torch.from_numpy(aggregated_first_momentum))
+                setattr(self, f'mean_{k}_squared', getattr(self, f'mean_{k}_squared') + torch.from_numpy(aggregated_second_momentum))
         for k in g1_data_names2size:
             setattr(self, f'mean_{k}', getattr(self, f'mean_{k}') / pure_motions_len)
             setattr(self, f'mean_{k}_squared', getattr(self, f'mean_{k}_squared') / pure_motions_len)
             setattr(self, f'std_{k}', torch.sqrt(getattr(self, f'mean_{k}_squared') - getattr(self, f'mean_{k}')**2))
     
     def __len__(self,):
-        return self.total_len - self.motions_len
+        return len(self.data_dict)
     
     def __getitem__(self, idx):
-        motion_index = bisect.bisect_right(self.motions_len_cumsum, idx)
-        if motion_index == 0:
-            index_in_motion = idx
-        else:
-            index_in_motion = idx - self.motions_len_cumsum[motion_index - 1]
         
-        motion = self.data_dict[self.idx2motion[motion_index]]
-        joint_pos = motion['joint_pos'][index_in_motion:index_in_motion + self.motions_len]
-        roll = motion['roll'][index_in_motion:index_in_motion + self.motions_len]
-        pitch = motion['pitch'][index_in_motion:index_in_motion + self.motions_len]
-        lin_vel = motion['lin_vel'][index_in_motion:index_in_motion + self.motions_len]
-        ang_vel = motion['ang_vel'][index_in_motion:index_in_motion + self.motions_len]
-        joint_vel = motion['joint_vel'][index_in_motion:index_in_motion + self.motions_len]
-        height = motion['height'][index_in_motion:index_in_motion + self.motions_len]
+        motion = self.data_dict[self.idx2motion[idx]]
         
+        joint_pos = motion['joint_pos']
+        roll = motion['roll']
+        pitch = motion['pitch']
+        lin_vel = motion['velocity']
+        ang_vel = motion['ang_vel']
+        joint_vel = motion['joint_vel']
+        height = motion['height']
+
         return (torch.cat([
             ((torch.tensor(joint_pos) - self.mean_joint_pos[None, :]) / self.std_joint_pos[None, :]).to(dtype=torch.float32),
             ((torch.tensor(roll[:, None]) - self.mean_roll[None, :]) / self.std_roll[None, :]).to(dtype=torch.float32),
@@ -114,17 +110,29 @@ class HumanoidDataset(Dataset):
             ((torch.tensor(ang_vel[:, None]) - self.mean_ang_vel[None, :]) / self.std_ang_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(joint_vel) - self.mean_joint_vel[None, :]) / self.std_joint_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(height[:, None]) - self.mean_height[None, :]) / self.std_height[None, :]).to(dtype=torch.float32),
-        ], dim=-1), self.embeddings[motion_index])
+        ], dim=-1), self.embeddings[idx])
     
     
 def make_collate_fn(null_token_embedding: torch.Tensor, replacement_probs: float = 0.15):
     
-    def collate_fn(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
+    def collate_fn(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_len = len(batch)
         proprio_list_data, embeddings_list_data = zip(*batch)
         mask = torch.rand(batch_len) > replacement_probs
-        proprio_tensor_data = torch.stack(list(proprio_list_data))
-        embeddings_tensor_data = torch.stack(list(embeddings_list_data))
-        return proprio_tensor_data, torch.where(mask.unsqueeze(dim=-1), embeddings_tensor_data, null_token_embedding.unsqueeze(dim=0))
+        cumsum_seq_lens = torch.cumsum(
+            torch.tensor([len(proprio) for proprio in proprio_list_data]),
+            dim=0,
+        )
+        cu_seqlen = torch.cat((torch.zeros(1), cumsum_seq_lens), dim=0).to(dtype=torch.int32)
+        proprio_tensor_data = torch.cat(proprio_list_data, dim=0) # shape - total_len_q x proprio_dim
+        embeddings_tensor_data = torch.stack(embeddings_list_data) # shape - batch_size x embedding_dim
+        embeddings_tensor_data = torch.where(mask.unsqueeze(dim=-1), embeddings_tensor_data, null_token_embedding.unsqueeze(dim=0))
+        embeddings_tensor_data = torch.repeat_interleave(embeddings_tensor_data, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+    
+        return (
+            proprio_tensor_data, 
+            embeddings_tensor_data,
+            cu_seqlen
+        )
         
     return collate_fn

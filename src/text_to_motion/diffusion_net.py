@@ -60,13 +60,14 @@ class FlowMatchingNet(nn.Module):
         
         self.flow_net = EfficientTransformer(config)
         
-    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.tensor):
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, cu_seqlen: torch.Tensor):
         '''
-        x - size batch_size x seq_len x (input_dim - 1)
-        cond - size batch_size x embed_dim
-        t - size batch_size x 1 x 1
+        x - size total_q_len x (input_dim - 1)
+        cond - size total_q_len x embed_dim
+        t - total_q_len x 1
+        cu_seqlen - torch.int32 tensor of shape (batch_size + 1)
         '''
-        flow_net_output = self.flow_net(x, cond, t[:, 0, 0]) # flow_net_output: batch_size x seq_len x output_dim
+        flow_net_output = self.flow_net(x, cond, t[:, 0], cu_seqlen) # flow_net_output: total_q_len x output_dim
         return flow_net_output
         
     
