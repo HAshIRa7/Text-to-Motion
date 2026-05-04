@@ -9,6 +9,10 @@ from .math import (
 )
 from tqdm.auto import tqdm
 import torch
+import random 
+
+NEXT_WORDS = ["After", "Next", "Then", "Consequently"]
+FPS = 50
 
 def last_token_pool(last_hidden_states: torch.Tensor,
                  attention_mask: torch.Tensor) -> torch.Tensor:
@@ -63,23 +67,44 @@ def collect_data(motions_dir: str, motions_len_min: int, motions_len_max: int):
     dct = {}
     for motion_file in tqdm(os.listdir(motions_dir)):
         with np.load(motions_dir +'/' + motion_file, allow_pickle=True) as data:
-            motion_len = len(data['joint_pos'])
-            num_iterations = motion_len // motions_len_max + ((motion_len % motions_len_max) >= motions_len_min)
-            for it in range(num_iterations):
-                motion_name = f'{motion_file}_{it}'
-                motion_slice = slice(it * motions_len_max, min(it * motions_len_max + motions_len_max, motion_len))
-                dct[motion_name] = {}
-                dct[motion_name]['text'] = data['text'].item() if 'text' in data else 'A Person ' + ' '.join(motion_file.split('.')[0].split('_'))
-                dct[motion_name]['height'] = data['body_pos_w'][motion_slice, 0, 2]
-                dct[motion_name]['joint_names'] = list(data['joint_names'])
-                dct[motion_name]['joint_pos'] = data['joint_pos'][motion_slice]
-                dct[motion_name]['joint_vel'] = data['joint_vel'][motion_slice]
-                root_quat_w = data['body_quat_w'][motion_slice, 0]
-                roll, pitch = convert_quat_to_roll_pitch(root_quat_w)
-                assert roll.shape[0] > 0
-                dct[motion_name]['roll'] = roll
-                dct[motion_name]['pitch'] = pitch
-                dct[motion_name]['velocity'] = convert_lin_vel_to_xy(root_quat_w, data['body_lin_vel_w'][motion_slice, 0])
-                dct[motion_name]['ang_vel'] = data['body_ang_vel_w'][motion_slice, 0, 2]
+            
+            metadata = data['metadata']
+            new_metadata = [item for item in metadata]
+            for offset in range(1, len(metadata)):
+                for i in range(len(metadata) - offset):
+                    prompt = metadata[i]['description']
+                    for j in range(i + 1, i + offset + 1):
+                        prompt += NEXT_WORDS[random.randint(0, len(NEXT_WORDS) - 1)] + ' ' + metadata[j]['description']
+                    
+                    new_metadata.append({
+                        'start_time': metadata[i]['start_time'],
+                        'end_time': metadata[i + offset]['end_time'],
+                        'description': prompt
+                    })
+                        
+            motion_len_total = len(data['joint_pos'])
+            for it, one_metadata in enumerate(new_metadata):
+                motion_start_fps = min(int(one_metadata['start_time'] * FPS), motion_len_total - 1)
+                motion_end_fps = min(int(one_metadata['end_time'] * FPS), motion_len_total - 1)
+                assert motion_end_fps - motion_start_fps > 0
+                motion_len = motion_end_fps - motion_start_fps
+                num_iterations = motion_len // motions_len_max + ((motion_len % motions_len_max) >= motions_len_min)
+                for new_it in range(num_iterations):
+                    motion_name = f'{motion_file}_{it}_{new_it}'
+                    motion_slice = slice(motion_start_fps + new_it * motions_len_max, min(motion_start_fps + (new_it + 1) * motions_len_max, motion_end_fps))
+                    dct[motion_name] = {}
+                    dct[motion_name]['text'] = one_metadata['description']
+                    dct[motion_name]['height'] = data['body_pos_w'][motion_slice, 0, 2]
+                    dct[motion_name]['joint_names'] = list(data['joint_names'])
+                    dct[motion_name]['joint_pos'] = data['joint_pos'][motion_slice]
+                    dct[motion_name]['joint_vel'] = data['joint_vel'][motion_slice]
+                    root_quat_w = data['body_quat_w'][motion_slice, 0]
+                    roll, pitch = convert_quat_to_roll_pitch(root_quat_w)
+                    assert roll.shape[0] > 0
+                    assert roll.shape[0] <= motions_len_max
+                    dct[motion_name]['roll'] = roll
+                    dct[motion_name]['pitch'] = pitch
+                    dct[motion_name]['velocity'] = convert_lin_vel_to_xy(root_quat_w, data['body_lin_vel_w'][motion_slice, 0])
+                    dct[motion_name]['ang_vel'] = data['body_ang_vel_w'][motion_slice, 0, 2]
     
     return dct

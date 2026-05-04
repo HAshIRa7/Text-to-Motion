@@ -62,7 +62,8 @@ for epoch in tqdm(range(1000)):
     loss_sum = 0
     my_schedule = schedule(wait=5, warmup=1, active=12)
     with profile(activities=activities, schedule=my_schedule) as profilero:
-        for idx, batch in tqdm(enumerate(humanoid_dataloader)):
+        pbar = tqdm(enumerate(humanoid_dataloader), total=len(humanoid_dataloader))
+        for idx, batch in pbar:
             x_1, cond, cu_seqlen = batch
             x_1 = x_1.to(device=device, dtype=dtype, non_blocking=True)
             cond = cond.to(device=device, dtype=dtype, non_blocking=True)

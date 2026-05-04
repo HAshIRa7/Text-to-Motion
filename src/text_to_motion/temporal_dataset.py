@@ -55,7 +55,7 @@ def Qwen_embed_data(data: Dict, device='cuda:0'):
     return list_embeddings, list_embeddings[-1]
 
 class HumanoidDataset(Dataset):
-    def __init__(self, motions_folder: str, motions_len_min: int = 100, motions_len_max: int = 500, catch_temporal=False):
+    def __init__(self, motions_folder: str, motions_len_min: int = 51, motions_len_max: int = 500, catch_temporal=False):
         self.data_dict = collect_data(motions_folder, motions_len_min, motions_len_max)
         
         self.idx2motion = {}
