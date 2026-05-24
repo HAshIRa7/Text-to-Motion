@@ -76,7 +76,7 @@ async def async_main(motions_dir: str,
         max_model_len=8192,
         pooler_config=PoolerConfig(
             seq_pooling_type="LAST",
-            use_activation=True, # in question !!!!!!
+            use_activation=False, # in question !!!!!!
         )
     )
     model = AsyncLLMEngine.from_engine_args(engine_args)
