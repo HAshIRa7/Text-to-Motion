@@ -5,12 +5,12 @@ from dataclasses import dataclass
 class TransformerConfig:
     input_dim: int = 64
     embed_dim: int = 2560
-    hidden_dim: int = 512
+    hidden_dim: int = 1024
     output_dim: int = 64
     num_heads: int = 8
-    num_layers: int = 6
-    intermediate_dim: int = 1024
-    max_seq_len: int = 350
+    num_layers: int = 10
+    intermediate_dim: int = 2048
+    max_seq_len: int = 4096
     dropout: float = 0.0
     rope_theta: float = 10000.0
     rms_norm_eps: float = 1e-6

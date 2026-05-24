@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from text_to_motion.config import TransformerConfig
-from flash_attn.layers.rotary import apply_rotary_emb, apply_rotary_emb_torch
-from flash_attn.flash_attn_interface import flash_attn_func, flash_attn_qkvpacked_func
+from flash_attn.layers.rotary import apply_rotary_emb
+from flash_attn.flash_attn_interface import flash_attn_varlen_func
 
 class RotaryPositionalEmbedding(nn.Module):
     """
@@ -42,26 +42,24 @@ class RotaryPositionalEmbedding(nn.Module):
         self.sin = self.sin.to(device=self.inv_freq.device)
         return self
     
-    def forward(self, q: torch.Tensor, k: torch.Tensor, seq_len: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, q: torch.Tensor, k: torch.Tensor, cu_seqlen: torch.Tensor, max_length: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Apply rotary positionsal embedding to q and k.
         
         Args:
-            q: (B, num_heads, S, head_dim)
-            k: (B, num_heads, S, head_dim)
+            q: (total_q_len, head_dim)
+            k: (total_q_len, head_dim)
             seq_len: sequence length (must be <= max_seq_len)
             
         Returns:
             q_rotated, k_rotated with same shapes
         """
-        assert seq_len <= self.max_seq_len, \
-            f"seq_len ({seq_len}) exceeds max_seq_len ({self.max_seq_len})"
         
-        cos = self.cos[:seq_len, :]
-        sin = self.sin[:seq_len, :]
+        cos = self.cos[:max_length, :]
+        sin = self.sin[:max_length, :]
 
-        q_rotated = apply_rotary_emb(q, cos, sin) 
-        k_rotated = apply_rotary_emb(k, cos, sin)
+        q_rotated = apply_rotary_emb(q, cos, sin, cu_seqlens=cu_seqlen, max_seqlen=max_length) 
+        k_rotated = apply_rotary_emb(k, cos, sin, cu_seqlens=cu_seqlen, max_seqlen=max_length)
 
         return q_rotated, k_rotated
 
@@ -91,18 +89,30 @@ class MultiHeadAttention(nn.Module):
     def forward(
         self, 
         x: torch.Tensor,
+        cu_seqlen: torch.Tensor,
     ) -> torch.Tensor:
-        B, S, H = x.shape
+        total_q_len, H = x.shape
         
         q, k, v = self.qkv_proj(x).split(self.config.hidden_dim, dim=-1)
-        q = q.view(B, S, self.num_heads, self.head_dim)
-        k = k.view(B, S, self.num_heads, self.head_dim)
-        v = v.view(B, S, self.num_heads, self.head_dim)
-
-        q, k = self.rope(q, k, S)
-        out = flash_attn_func(q, k, v, dropout_p=self.config.dropout, causal=False, deterministic=True)
-
-        out = out.contiguous().view(B, S, H)
+        q = q.view(total_q_len, self.num_heads, self.head_dim)
+        k = k.view(total_q_len, self.num_heads, self.head_dim)
+        v = v.view(total_q_len, self.num_heads, self.head_dim)
+        
+        max_length = torch.amax(cu_seqlen[1:] - cu_seqlen[:-1]).item()
+        q, k = self.rope(q, k, cu_seqlen, max_length)
+        out = flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q=cu_seqlen,
+            cu_seqlens_k=cu_seqlen,
+            max_seqlen_q=max_length,
+            max_seqlen_k=max_length,
+            dropout_p=self.config.dropout,
+            causal=False,
+            deterministic=True
+        )
+        out = out.contiguous().view(total_q_len, H)
         out = self.out_proj(out)
 
         return out

@@ -10,7 +10,7 @@ from text_to_motion.config import TransformerConfig
 from efficient_model.norm import RMSNorm
 from efficient_model.swiglu import SwiGLUFeedForward
 from efficient_model.attention import MultiHeadAttention
-from efficient_model.adaln import TimeStepEmbedder, ConditionEmbedder
+from efficient_model.adaln import FusedAdaLNModulation
 
 
 class TransformerBlock(nn.Module):
@@ -26,8 +26,9 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        cu_seqlen: torch.Tensor,
     ) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x))
+        x = x + self.attn(self.ln1(x), cu_seqlen)
         x = x + self.ffn(self.ln2(x))
         return x
 
@@ -45,13 +46,8 @@ class EfficientTransformer(nn.Module):
         self.layers = nn.ModuleList([
             TransformerBlock(config) for _ in range(config.num_layers)
         ])
-        
         self.adaln_layers = nn.ModuleList([
-            TimeStepEmbedder(config.hidden_dim) for _ in range(config.num_layers)
-        ])
-        
-        self.text_adaln_layers = nn.ModuleList([
-            ConditionEmbedder(config.embed_dim, config.hidden_dim) for _ in range(config.num_layers)
+            FusedAdaLNModulation(config.hidden_dim, config.embed_dim) for _ in range(config.num_layers)
         ])
 
         # self.ln_f = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
@@ -71,21 +67,20 @@ class EfficientTransformer(nn.Module):
         x: torch.Tensor,
         cond: torch.Tensor,
         t: torch.Tensor,
+        cu_seqlen: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
-            x: (B, S, input_dim) token indices
+            x: (total_q_len, input_dim) token indices
             cond: (B, embed_dim)
-            t: (B,)
-            attention_mask: optional attention mask
-
+            t: (total_q_len,)
+            cu_seqlen: (batch_size + 1,)
         Returns:
-            logits: (B, S, output_dim)
+            pred: (total_q_len, output_dim)
         """
         x = self.in_linear(x)
         for idx, layer in enumerate(self.layers):
-            x = layer(x)
-            x = self.adaln_layers[idx](x, t)
-            x = self.text_adaln_layers[idx](x, cond)
+            x = layer(x, cu_seqlen)
+            x = self.adaln_layers[idx](x, t, cond)
         x = self.out_linear(x)
         return x

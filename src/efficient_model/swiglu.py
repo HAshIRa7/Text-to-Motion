@@ -118,8 +118,8 @@ def sum_compute(gate_grad, w_gate, up_grad, w_up):
 
 @torch.compile
 def multi(mat1, mat2, x):
-    b, s, h1 = mat1.shape
-    return mat1.view(-1, h1).transpose(-1, -2) @ x.view(b * s, -1), mat2.view(-1, h1).transpose(-1, -2) @ x.view(b * s, -1)
+    s, h1 = mat1.shape
+    return mat1.view(-1, h1).transpose(-1, -2) @ x.view(s, -1), mat2.view(-1, h1).transpose(-1, -2) @ x.view(s, -1)
 
 
     
@@ -158,9 +158,9 @@ class MemoryEfficientSwiGLUMLP(torch.autograd.Function):
 
         with torch.no_grad():
             gate_grad, up_grad, activation_out = swiglu_backward(gate, up, grad_output @ w_down, alpha, limit)
-            b, s, h = grad_output.shape
-            b, s, h1 = gate_grad.shape
-            grad_w_down = grad_output.view(b * s, -1).transpose(-1, -2) @ activation_out.view(b * s, -1)
+            s, _ = grad_output.shape
+            s, _ = gate_grad.shape
+            grad_w_down = grad_output.view(s, -1).transpose(-1, -2) @ activation_out.view(s, -1)
             
             del gate, up, grad_output, activation_out
             

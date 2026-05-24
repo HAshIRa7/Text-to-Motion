@@ -115,12 +115,14 @@ class InferenceModel:
         self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-4B', padding_side='left')
         self.model = AutoModel.from_pretrained('Qwen/Qwen3-Embedding-4B').to(device)
         
-        self.schedule = edm_schedule(diffusion_steps + 1).to(device=device, dtype=dtype)
-        self.motion_len = int(7.0 * 50)
+        self.schedule = edm_schedule(diffusion_steps + 1).to(device=device, dtype=dtype).unsqueeze(dim=1)
+        self.motion_len = int(20.0 * 50)
         
         self.device=device
         self.dtype=dtype
         self.diffusion_steps = diffusion_steps
+        self.motion_time = 10.0
+        self.guidance_scale = 3.0
         
     def generate(self, text: str):
         
@@ -138,14 +140,26 @@ class InferenceModel:
             embed = last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask']).to(dtype=self.dtype)
         cond_embed = embed[0:1]
         uncond_embed = embed[1:2]
-        motion = torch.randn(1, self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
+        self.motion_len = int(50 * self.motion_time)
+        motion = torch.randn(self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
+        cu_seqlen = torch.tensor([0, self.motion_len]).to(device=self.device, dtype=torch.int32)
+        # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+        copy_schedule = self.schedule * torch.ones(size=(1, self.motion_len)).to(device=self.device, dtype=self.dtype)
         with torch.no_grad():
             for it in range(self.diffusion_steps):
                 with torch.autocast(device_type=self.device, dtype=torch.bfloat16):
-                    motion = self.flow_net.midpoint_step(motion, cond_embed, self.schedule[it][None], self.schedule[it + 1][None])
+                    # motion = self.flow_net.midpoint_step(motion, cond_embed, cu_seqlen, copy_schedule[it][:, None], copy_schedule[it + 1][:, None])
+                    motion = self.flow_net.guidance_step(
+                        motion, 
+                        cond_embed, 
+                        uncond_embed, 
+                        copy_schedule[it][:, None],  
+                        copy_schedule[it + 1][:, None], 
+                        cu_seqlen
+                    )
                     # motion = self.flow_net.guidance_step(motion, cond_embed, uncond_embed, self.schedule[it][None], self.schedule[it + 1][None])
         
-        return postprocess_motion(self.flow_net, motion)
+        return postprocess_motion(self.flow_net, motion[None])
 
 def match_joint_names(joint_names_data: List[str], urdf_joint_names: List[str], joint_data: np.ndarray):
     '''
@@ -166,7 +180,8 @@ def main(
     robot_type = "g1",
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
-    checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
+    # checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
+    checkpoint_path: str = 'checkpoints/model_new_weight_3.pth'
 ) -> None:
     # Start viser server.
     server = viser.ViserServer()
@@ -233,6 +248,26 @@ def main(
             0.0,
         ),
     )
+    
+    slider = server.add_slider(
+        label='time',
+        min=1.0,
+        max=60.0,
+        step=1e-1,
+        initial_value=10.0,
+    )
+    
+    slider.on_update(lambda _: setattr(inference, 'motion_time', slider.value))
+    
+    guidance_slider = server.add_slider(
+        label='guidance scale',
+        min=1.0,
+        max=7.0,
+        step=1,
+        initial_value=3.0,
+    )
+    
+    guidance_slider.on_update(lambda _: setattr(inference, 'guidance_scale', guidance_slider.value))
     
     generate_motion = server.gui.add_button("Generate Motion")
     
