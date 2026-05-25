@@ -7,7 +7,7 @@ from vllm import AsyncEngineArgs, AsyncLLMEngine, PoolingParams
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm.auto import tqdm
 import tyro
-
+from text_to_motion import collect_data
 SENTINEL = object()
 
 def save_npz(filepath: str, embedding: np.ndarray):
@@ -99,10 +99,14 @@ async def async_main(motions_dir: str,
         await asyncio.gather(*consumers)
         
 def calculate_embeddings(
-    motions_dir: str = 'postprocessed_motions',
+    motions_dir: str = 'motions',
+    new_motions_dir: str = 'postprocessed_motions',
+    motions_len_min: int = 51,
+    motions_len_max: int = 2500,
     batch_size: int = 512,
 ):
-    asyncio.run(async_main(motions_dir, batch_size))
+    collect_data(motions_dir, new_motions_dir, motions_len_min, motions_len_max)
+    asyncio.run(async_main(new_motions_dir, batch_size))
 
 
 if __name__ == '__main__':
