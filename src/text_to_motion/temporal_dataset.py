@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from .utils import collect_data, last_token_pool, calculate_embeddings
+from .utils import collect_data, last_token_pool
 import os
 from typing import Dict, List
 from transformers import AutoTokenizer, AutoModel
