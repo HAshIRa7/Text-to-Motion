@@ -143,6 +143,8 @@ class InferenceModel:
         self.motion_len = int(50 * self.motion_time)
         motion = torch.randn(self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
         cu_seqlen = torch.tensor([0, self.motion_len]).to(device=self.device, dtype=torch.int32)
+        cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+        uncond_embed = torch.repeat_interleave(uncond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         copy_schedule = self.schedule * torch.ones(size=(1, self.motion_len)).to(device=self.device, dtype=self.dtype)
         with torch.no_grad():
@@ -181,7 +183,7 @@ def main(
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
     # checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
-    checkpoint_path: str = 'checkpoints/model_new_weight_3.pth'
+    checkpoint_path: str = 'checkpoints/model_new_weight_4.pth'
 ) -> None:
     # Start viser server.
     server = viser.ViserServer()

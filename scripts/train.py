@@ -56,7 +56,7 @@ flow_net = FlowMatchingNet(
     height_mean=humanoid_dataset.statsCollector.mean_height,
     height_std=humanoid_dataset.statsCollector.std_height,
 ).to(dtype=dtype, device=device)
-optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-5)
+optimizer = torch.optim.AdamW(flow_net.parameters(), lr=2e-5)
 optimizer.zero_grad()
 save_folder = 'checkpoints'
 logs_folder = 'logs'
@@ -86,7 +86,7 @@ for epoch in tqdm(range(1000)):
                 loss = torch.mean((u_pred - (x_1 - x_0))**2)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
+            # torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
