@@ -60,14 +60,14 @@ class FlowMatchingNet(nn.Module):
         
         self.flow_net = EfficientTransformer(config)
         
-    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, cu_seqlen: torch.Tensor):
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, cu_seqlen_q: torch.Tensor, cu_seqlen_k: torch.Tensor):
         '''
         x - size total_q_len x (input_dim - 1)
         cond - size total_q_len x embed_dim
         t - total_q_len x 1
         cu_seqlen - torch.int32 tensor of shape (batch_size + 1)
         '''
-        flow_net_output = self.flow_net(x, cond, t[:, 0], cu_seqlen) # flow_net_output: total_q_len x output_dim
+        flow_net_output = self.flow_net(x, cond, t[:, 0], cu_seqlen_q, cu_seqlen_k) # flow_net_output: total_q_len x output_dim
         return flow_net_output
         
     
@@ -97,12 +97,14 @@ class FlowMatchingNet(nn.Module):
         uncond: torch.Tensor, 
         t_start: torch.Tensor, 
         t_end: torch.Tensor,
-        cu_seqlen: torch.Tensor,
+        cu_seqlen_q: torch.Tensor,
+        cond_cu_seqlen_k: torch.Tensor,
+        uncond_cu_seqlen_k: torch.Tensor,
         guidance_scale: int = 3
     ):
         
-        cond_vel = self.forward(x, cond, t_start, cu_seqlen=cu_seqlen)
-        uncond_vel = self.forward(x, uncond, t_start, cu_seqlen=cu_seqlen)
+        cond_vel = self.forward(x, cond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=cond_cu_seqlen_k)
+        uncond_vel = self.forward(x, uncond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=uncond_cu_seqlen_k)
         guidance_vel = (1 - guidance_scale) * uncond_vel + guidance_scale * cond_vel
         x_next = x + guidance_vel * (t_end - t_start)
         return x_next

@@ -15,14 +15,16 @@ from tqdm import tqdm
 from torch.profiler import profile, ProfilerActivity, record_function, schedule
 from transformers import AutoTokenizer, AutoModel
 from datetime import datetime
+from torch.optim.lr_scheduler import ExponentialLR
 
 device = 'cuda:0'
 dtype=torch.float32
+batch_size=32
 humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_new_folder='postprocessed_motions')
 # null_token_embedding = humanoid_dataset.null_token_embedding 
 humanoid_dataloader = DataLoader(
     humanoid_dataset, 
-    batch_size=32, 
+    batch_size=batch_size, 
     collate_fn=make_collate_fn(humanoid_dataset.null_token_embedding), 
     shuffle=True, 
     drop_last=False, 
@@ -57,6 +59,7 @@ flow_net = FlowMatchingNet(
     height_std=humanoid_dataset.statsCollector.std_height,
 ).to(dtype=dtype, device=device)
 optimizer = torch.optim.AdamW(flow_net.parameters(), lr=2e-5)
+scheduler = ExponentialLR(optimizer, gamma=0.9)
 optimizer.zero_grad()
 save_folder = 'checkpoints'
 logs_folder = 'logs'
@@ -70,19 +73,19 @@ for epoch in tqdm(range(1000)):
     with profile(activities=activities, schedule=my_schedule) as profilero:
         pbar = tqdm(enumerate(humanoid_dataloader), total=len(humanoid_dataloader))
         for idx, batch in pbar:
-            x_1, cond, cu_seqlen = batch
+            x_1, cond, cu_seqlen_q, cu_seqlen_k, batch_size = batch
             x_1 = x_1.to(device=device, dtype=dtype, non_blocking=True)
             cond = cond.to(device=device, dtype=dtype, non_blocking=True)
-            cu_seqlen = cu_seqlen.to(device=device, non_blocking=True)
-            t = torch.rand(cond.shape[0], 1).to(dtype=dtype, device=device, non_blocking=True)
-            t = torch.repeat_interleave(t, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
-            cond = torch.repeat_interleave(cond, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+            cu_seqlen_q = cu_seqlen_q.to(device=device, non_blocking=True)
+            cu_seqlen_k = cu_seqlen_k.to(device=device, non_blocking=True)
+            t = torch.rand(batch_size, 1).to(dtype=dtype, device=device, non_blocking=True)
+            t = torch.repeat_interleave(t, cu_seqlen_q[1:] - cu_seqlen_q[:-1], dim=0)
             x_0 = torch.randn_like(x_1)
             x_t = t * x_1 + (1 - t) * x_0
             
             # (output_dim == input_dim)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                u_pred = flow_net(x_t, cond, t, cu_seqlen) # (total_q_len, output_dim)
+                u_pred = flow_net(x_t, cond, t, cu_seqlen_q, cu_seqlen_k) # (total_q_len, output_dim)
                 loss = torch.mean((u_pred - (x_1 - x_0))**2)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -95,6 +98,8 @@ for epoch in tqdm(range(1000)):
             if (idx + 1) % 100 == 0 or idx == 1:
                 writer.add_scalar('Loss/train', loss, epoch * len(humanoid_dataset) + idx * 32)
             profilero.step()
+    
+    scheduler.step()
     os.makedirs(save_folder, exist_ok=True)
     torch.save(flow_net.state_dict(), f'{save_folder}/model_new_weight_{epoch}.pth')
         

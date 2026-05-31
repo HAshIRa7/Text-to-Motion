@@ -69,13 +69,14 @@ async def async_main(motions_dir: str,
                 pbar.update(1) 
 
     engine_args = AsyncEngineArgs(
-        model="Qwen/Qwen3-Embedding-4B",
+        model="Qwen/Qwen3-4B",
         convert="embed",
         gpu_memory_utilization=0.95,
         runner="pooling",
         max_model_len=8192,
         pooler_config=PoolerConfig(
-            seq_pooling_type="LAST",
+            task="token_embed",
+            # seq_pooling_type="ALL",
             use_activation=False, # in question !!!!!!
         )
     )

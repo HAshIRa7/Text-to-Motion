@@ -4,7 +4,7 @@ from .swiglu import (
     swiglu_forward, swiglu_backward
 )
 # from .adaln import TimeStepEmbedder
-from .attention import RotaryPositionalEmbedding, MultiHeadAttention
+from .attention import RotaryPositionalEmbedding, MultiHeadAttention, MultiHeadCrossAttention
 from .transformer import EfficientTransformer, TransformerBlock
 
 __all__ = [
@@ -13,4 +13,5 @@ __all__ = [
     "swiglu_forward", "swiglu_backward",
     "RotaryPositionalEmbedding", "MultiHeadAttention",
     "EfficientTransformer", "TransformerBlock",
+    "MultiHeadCrossAttention",
 ]

@@ -11,7 +11,7 @@ from robot_descriptions.loaders.yourdfpy import load_robot_description
 from text_to_motion import (
     FlowMatchingNet, 
     TransformerConfig, 
-    last_token_pool,
+    # last_token_pool,
     convert_roll_pitch_ang_vel_to_quat,
     convert_lin_vel_xy_to_root_pos,
 )
@@ -112,8 +112,8 @@ class InferenceModel:
         self.flow_net = flow_net.to(device=device, dtype=dtype)
         self.flow_net.eval()
         
-        self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-4B', padding_side='left')
-        self.model = AutoModel.from_pretrained('Qwen/Qwen3-Embedding-4B').to(device)
+        self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-4B')
+        self.model = AutoModel.from_pretrained('Qwen/Qwen3-4B').to(device)
         
         self.schedule = edm_schedule(diffusion_steps + 1).to(device=device, dtype=dtype).unsqueeze(dim=1)
         self.motion_len = int(20.0 * 50)
@@ -126,7 +126,7 @@ class InferenceModel:
         
     def generate(self, text: str):
         
-        batch = [text, '']
+        batch = [text, ' ']
         max_length = 8192
         batch_dict = self.tokenizer(
             batch,
@@ -137,14 +137,16 @@ class InferenceModel:
         ).to(self.model.device)
         with torch.no_grad():   
             outputs = self.model(**batch_dict)
-            embed = last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask']).to(dtype=self.dtype)
-        cond_embed = embed[0:1]
-        uncond_embed = embed[1:2]
+            embed = outputs.last_hidden_state.to(dtype=self.dtype)
+        cond_embed = embed[0]
+        uncond_embed = embed[1]
         self.motion_len = int(50 * self.motion_time)
         motion = torch.randn(self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
-        cu_seqlen = torch.tensor([0, self.motion_len]).to(device=self.device, dtype=torch.int32)
-        cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
-        uncond_embed = torch.repeat_interleave(uncond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+        cu_seqlen_q = torch.tensor([0, self.motion_len]).to(device=self.device, dtype=torch.int32)
+        cond_cu_seqlen_k = torch.tensor([0, len(cond_embed)]).to(device=self.device, dtype=torch.int32)
+        uncond_cu_seqlen_k = torch.tensor([0, 1]).to(device=self.device, dtype=torch.int32)
+        # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+        # uncond_embed = torch.repeat_interleave(uncond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         copy_schedule = self.schedule * torch.ones(size=(1, self.motion_len)).to(device=self.device, dtype=self.dtype)
         with torch.no_grad():
@@ -157,7 +159,10 @@ class InferenceModel:
                         uncond_embed, 
                         copy_schedule[it][:, None],  
                         copy_schedule[it + 1][:, None], 
-                        cu_seqlen
+                        cu_seqlen_q,
+                        cond_cu_seqlen_k,
+                        uncond_cu_seqlen_k,
+                        guidance_scale=self.guidance_scale,
                     )
                     # motion = self.flow_net.guidance_step(motion, cond_embed, uncond_embed, self.schedule[it][None], self.schedule[it + 1][None])
         
@@ -183,7 +188,7 @@ def main(
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
     # checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
-    checkpoint_path: str = 'checkpoints/model_new_weight_4.pth'
+    checkpoint_path: str = 'checkpoints/model_new_weight_0.pth'
 ) -> None:
     # Start viser server.
     server = viser.ViserServer()
@@ -263,7 +268,7 @@ def main(
     
     guidance_slider = server.add_slider(
         label='guidance scale',
-        min=1.0,
+        min=0.0,
         max=7.0,
         step=1,
         initial_value=3.0,

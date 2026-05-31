@@ -23,7 +23,7 @@ class HumanoidDataset(Dataset):
         self.main_motions_new_folder = motions_new_folder
         with open('statistic_collector.pkl', 'rb') as statistic_collector:
             self.statsCollector = pickle.load(statistic_collector)
-        with np.load('null_token_embedding.npz', allow_pickle=True) as embedding:
+        with np.load('new_null_token_embedding.npz', allow_pickle=True) as embedding:
             self.null_token_embedding = torch.tensor(embedding['embedding'].copy())
 
         self.motion_names = os.listdir(motions_new_folder) 
@@ -40,7 +40,7 @@ class HumanoidDataset(Dataset):
             ang_vel = motion['ang_vel']
             joint_vel = motion['joint_vel']
             height = motion['height']
-            emb = torch.tensor(motion['emb'])[-1]
+            emb = torch.tensor(motion['emb'])
 
         return (torch.cat([
             ((torch.tensor(joint_pos) - self.statsCollector.mean_joint_pos[None, :]) / self.statsCollector.std_joint_pos[None, :]).to(dtype=torch.float32),
@@ -53,26 +53,35 @@ class HumanoidDataset(Dataset):
         ], dim=-1), emb)
     
     
-def make_collate_fn(null_token_embedding: torch.Tensor, replacement_probs: float = 0.15):
+def make_collate_fn(null_token_embedding: torch.Tensor, replacement_probs: float = 0.08):
     
     def collate_fn(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        batch_len = len(batch)
         proprio_list_data, embeddings_list_data = zip(*batch)
-        mask = torch.rand(batch_len) > replacement_probs
         cumsum_seq_lens = torch.cumsum(
             torch.tensor([len(proprio) for proprio in proprio_list_data]),
             dim=0,
         )
-        cu_seqlen = torch.cat((torch.zeros(1), cumsum_seq_lens), dim=0).to(dtype=torch.int32)
+        cu_seqlen_q = torch.cat((torch.zeros(1), cumsum_seq_lens), dim=0).to(dtype=torch.int32)
         proprio_tensor_data = torch.cat(proprio_list_data, dim=0) # shape - total_len_q x proprio_dim
-        embeddings_tensor_data = torch.stack(embeddings_list_data) # shape - batch_size x embedding_dim
-        embeddings_tensor_data = torch.where(mask.unsqueeze(dim=-1), embeddings_tensor_data, null_token_embedding.unsqueeze(dim=0))
-        # embeddings_tensor_data = torch.repeat_interleave(embeddings_tensor_data, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
+        mask = torch.rand(len(embeddings_list_data)) < replacement_probs
+        unsq_null_token_embedding = null_token_embedding.unsqueeze(0)
+        new_embeddings_list_data = [
+            unsq_null_token_embedding if elem_mask else seqs_embeddings
+            for elem_mask, seqs_embeddings in zip(mask, embeddings_list_data)
+        ]
+        text_cumsum_seq_lens = torch.cumsum(
+            torch.tensor([len(emb) for emb in new_embeddings_list_data]),
+            dim=0,
+        )
+        cu_seqlen_k = torch.cat((torch.zeros(1), text_cumsum_seq_lens), dim=0).to(dtype=torch.int32)
+        embeddings_tensor_data = torch.cat(new_embeddings_list_data, dim=0)
     
         return (
             proprio_tensor_data, 
             embeddings_tensor_data,
-            cu_seqlen
+            cu_seqlen_q,
+            cu_seqlen_k,
+            len(batch),
         )
         
     return collate_fn

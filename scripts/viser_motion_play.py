@@ -9,7 +9,14 @@ import tyro
 from robot_descriptions.loaders.yourdfpy import load_robot_description
 
 import viser
-from viser.extras import ViserUrdf
+from viser.extras import ViserUrdf 
+
+
+joint_names = ['left_hip_pitch_joint', 'left_hip_roll_joint', 'left_hip_yaw_joint', 'left_knee_joint', 'left_ankle_pitch_joint', 'left_ankle_roll_joint', 
+               'right_hip_pitch_joint', 'right_hip_roll_joint', 'right_hip_yaw_joint', 'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint', 
+               'waist_yaw_joint', 'waist_roll_joint', 'waist_pitch_joint', 
+               'left_shoulder_pitch_joint', 'left_shoulder_roll_joint', 'left_shoulder_yaw_joint', 'left_elbow_joint', 'left_wrist_roll_joint', 'left_wrist_pitch_joint', 'left_wrist_yaw_joint', 
+               'right_shoulder_pitch_joint', 'right_shoulder_roll_joint', 'right_shoulder_yaw_joint', 'right_elbow_joint', 'right_wrist_roll_joint', 'right_wrist_pitch_joint', 'right_wrist_yaw_joint']
 
 def match_joint_names(joint_names_data: List[str], urdf_joint_names: List[str], joint_data: np.ndarray):
     '''
@@ -26,7 +33,8 @@ def match_joint_names(joint_names_data: List[str], urdf_joint_names: List[str], 
     return joint_data[:, permutation]
 
 def main(
-    motion_folder: str = 'generated_motions',
+    motion_file: str = 'lafan_burpee_001__A360.npz',
+    motion_folder: str = 'motions',
     robot_type = "g1",
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
@@ -38,14 +46,12 @@ def main(
     reset = False 
 
     dct = {}
-    motions_files = os.listdir(motion_folder)
-    for motion_file in motions_files:
-        dct[motion_file] = {}
-        with np.load(motion_folder + '/' + motion_file, allow_pickle=True) as data:
-            dct[motion_file]['joint_names'] = list(data['joint_names'])
-            dct[motion_file]['joint_pos'] = data['joint_pos']
-            dct[motion_file]['body_pos_w'] = data['body_pos_w']
-            dct[motion_file]['body_quat_w'] = data['body_quat_w']
+    dct[motion_file] = {}
+    with np.load(motion_folder + '/' + motion_file, allow_pickle=True) as data:
+        dct[motion_file]['joint_names'] = joint_names
+        dct[motion_file]['joint_pos'] = data['joint_pos']
+        dct[motion_file]['body_pos_w'] = data['body_pos_w']
+        dct[motion_file]['body_quat_w'] = data['body_quat_w']
     
         dct[motion_file]['motion_len'] = len(dct[motion_file]['joint_pos'])
         print(f'{motion_file}: {dct[motion_file]["motion_len"]}')
@@ -70,12 +76,11 @@ def main(
     
     viser_urdf.update_cfg(np.zeros(len(viser_urdf.get_actuated_joint_limits())))
     
-    for motion_file in motions_files:
-        dct[motion_file]['joint_pos'] = match_joint_names(
-            joint_names_data=dct[motion_file]['joint_names'], 
-            urdf_joint_names=list(viser_urdf.get_actuated_joint_limits()), 
-            joint_data=dct[motion_file]['joint_pos'],
-        )
+    dct[motion_file]['joint_pos'] = match_joint_names(
+        joint_names_data=dct[motion_file]['joint_names'], 
+        urdf_joint_names=list(viser_urdf.get_actuated_joint_limits()), 
+        joint_data=dct[motion_file]['joint_pos'],
+    )
     
     # Add visibility checkboxes.
     with server.gui.add_folder("Visibility"):
@@ -151,7 +156,7 @@ def main(
         nonlocal reset
         reset = True
         
-    dropdown = server.gui.add_dropdown(label="Motions", options=motions_files)
+    dropdown = server.gui.add_dropdown(label="Motions", options=[motion_file])
     
     gui_text = server.gui.add_text(
                 "Text",
