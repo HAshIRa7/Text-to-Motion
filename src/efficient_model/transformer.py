@@ -11,6 +11,7 @@ from efficient_model.norm import RMSNorm
 from efficient_model.swiglu import SwiGLUFeedForward
 from efficient_model.attention import MultiHeadAttention, MultiHeadCrossAttention
 from efficient_model.adaln import FusedAdaLNModulation
+from efficient_model.positional_encoding import PositionalEncoding
 
 
 class TransformerBlock(nn.Module):
@@ -49,6 +50,7 @@ class EfficientTransformer(nn.Module):
         super().__init__()
         self.config = config
 
+        self.absolute_position_encoding = PositionalEncoding(config.max_seq_len, config.hidden_dim)
         self.in_linear = nn.Linear(config.input_dim, config.hidden_dim)
         self.layers = nn.ModuleList([
             TransformerBlock(config) for _ in range(config.num_layers)
@@ -90,6 +92,7 @@ class EfficientTransformer(nn.Module):
             pred: (total_q_len, output_dim)
         """
         x = self.in_linear(x)
+        x = self.absolute_position_encoding(x, cu_seqlen_q)
         for idx, layer in enumerate(self.layers):
             x = layer(x, cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
             x = self.adaln_layers[idx](x, t)
