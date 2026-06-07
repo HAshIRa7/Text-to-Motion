@@ -58,7 +58,7 @@ def main():
         humanoid_dataset, 
         batch_size=batch_size, 
         collate_fn=make_collate_fn(tokenizer=tokenizer), 
-        shuffle=sampler,
+        sampler=sampler,
         drop_last=False,
         num_workers=16,
         pin_memory=True,
@@ -101,8 +101,8 @@ def main():
         output_device=local_rank,
     )
         
-    optimizer = torch.optim.AdamW(flow_net.parameters(), lr=2e-5)
-    scheduler = ExponentialLR(optimizer, gamma=0.9)
+    optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-5)
+    scheduler = ExponentialLR(optimizer, gamma=0.95)
     optimizer.zero_grad()
     save_folder = 'checkpoints'
     logs_folder = 'logs'

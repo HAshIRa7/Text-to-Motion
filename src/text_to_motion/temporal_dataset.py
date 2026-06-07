@@ -42,7 +42,6 @@ class HumanoidDataset(Dataset):
             ang_vel = motion['ang_vel']
             joint_vel = motion['joint_vel']
             height = motion['height']
-            # emb = torch.tensor(motion['emb'])
             text = motion['text'].item()
 
         return (torch.cat([
