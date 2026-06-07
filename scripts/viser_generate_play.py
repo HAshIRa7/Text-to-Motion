@@ -112,8 +112,9 @@ class InferenceModel:
         self.flow_net = flow_net.to(device=device, dtype=dtype)
         self.flow_net.eval()
         
-        self.tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-4B')
-        self.model = AutoModel.from_pretrained('Qwen/Qwen3-4B').to(device)
+        # print(self.flow_net)
+        self.tokenizer = AutoTokenizer.from_pretrained('google/flan-t5-xl')
+        # self.model = AutoModel.from_pretrained('Qwen/Qwen3-4B').to(device)
         
         self.schedule = edm_schedule(diffusion_steps + 1).to(device=device, dtype=dtype).unsqueeze(dim=1)
         self.motion_len = int(20.0 * 50)
@@ -125,48 +126,53 @@ class InferenceModel:
         self.guidance_scale = 3.0
         
     def generate(self, text: str):
-        
-        batch = [text, ' ']
-        max_length = 8192
+        print(text)
+        batch = [text, '']
+        max_length = 512
         batch_dict = self.tokenizer(
             batch,
             padding=True,
             truncation=True,
-            max_length=max_length,
+            max_length=512,
             return_tensors="pt",
-        ).to(self.model.device)
-        with torch.no_grad():   
-            outputs = self.model(**batch_dict)
-            embed = outputs.last_hidden_state.to(dtype=self.dtype)
-        cond_embed = embed[0]
-        uncond_embed = embed[1]
+        )
+        # with torch.no_grad():   
+        #     outputs = self.model(**batch_dict)
+        #     embed = outputs.last_hidden_state.to(dtype=self.dtype)
+        # model = BGEM3FlagModel('BAAI/bge-m3',  
+        #                use_fp16=True)
+        # embed = model.encode(batch, return_dense=True, return_sparse=True, return_colbert_vecs=True)['colbert_vecs'] 
+        # cond_embed = torch.tensor(embed[0]).to(device=self.device, dtype=self.dtype)
+        # uncond_embed = torch.tensor(embed[1]).to(device=self.device, dtype=self.dtype)
         self.motion_len = int(50 * self.motion_time)
         motion = torch.randn(self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
-        cu_seqlen_q = torch.tensor([0, self.motion_len]).to(device=self.device, dtype=torch.int32)
-        cond_cu_seqlen_k = torch.tensor([0, len(cond_embed)]).to(device=self.device, dtype=torch.int32)
-        uncond_cu_seqlen_k = torch.tensor([0, 1]).to(device=self.device, dtype=torch.int32)
+        motion = torch.cat([motion, motion], dim=0)
+        cu_seqlen_q = torch.tensor([0, self.motion_len, 2 * self.motion_len]).to(device=self.device, dtype=torch.int32)
+        cond_cu_seqlen_k = torch.tensor([0, *torch.cumsum(batch_dict['attention_mask'].sum(dim=-1), dim=0).tolist()]).to(device=self.device, dtype=torch.int32)
         # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         # uncond_embed = torch.repeat_interleave(uncond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
-        copy_schedule = self.schedule * torch.ones(size=(1, self.motion_len)).to(device=self.device, dtype=self.dtype)
+        copy_schedule = self.schedule * torch.ones(size=(1, 2 * self.motion_len)).to(device=self.device, dtype=self.dtype)
         with torch.no_grad():
             for it in range(self.diffusion_steps):
                 with torch.autocast(device_type=self.device, dtype=torch.bfloat16):
                     # motion = self.flow_net.midpoint_step(motion, cond_embed, cu_seqlen, copy_schedule[it][:, None], copy_schedule[it + 1][:, None])
-                    motion = self.flow_net.guidance_step(
+                    motion = self.flow_net.new_guidance_step(
                         motion, 
-                        cond_embed, 
-                        uncond_embed, 
+                        batch_dict.to(self.device),
                         copy_schedule[it][:, None],  
                         copy_schedule[it + 1][:, None], 
                         cu_seqlen_q,
                         cond_cu_seqlen_k,
-                        uncond_cu_seqlen_k,
                         guidance_scale=self.guidance_scale,
+                        max_length_q=self.motion_len,
+                        max_length_k=max(batch_dict['attention_mask'].sum(dim=-1).tolist()),
+                        motion_len=self.motion_len
                     )
+                    motion = torch.cat([motion, motion], dim=0)
                     # motion = self.flow_net.guidance_step(motion, cond_embed, uncond_embed, self.schedule[it][None], self.schedule[it + 1][None])
         
-        return postprocess_motion(self.flow_net, motion[None])
+        return postprocess_motion(self.flow_net, motion[:self.motion_len][None])
 
 def match_joint_names(joint_names_data: List[str], urdf_joint_names: List[str], joint_data: np.ndarray):
     '''

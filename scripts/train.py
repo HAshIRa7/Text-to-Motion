@@ -16,16 +16,20 @@ from torch.profiler import profile, ProfilerActivity, record_function, schedule
 from transformers import AutoTokenizer, AutoModel
 from datetime import datetime
 from torch.optim.lr_scheduler import ExponentialLR
+from transformers import AutoTokenizer, T5EncoderModel
 
 device = 'cuda:0'
 dtype=torch.float32
-batch_size=32
+batch_size=16
+
+text_encoder_model_name = 'google/flan-t5-xl'
+tokenizer = AutoTokenizer.from_pretrained(text_encoder_model_name)
 humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_new_folder='postprocessed_motions')
 # null_token_embedding = humanoid_dataset.null_token_embedding 
 humanoid_dataloader = DataLoader(
     humanoid_dataset, 
     batch_size=batch_size, 
-    collate_fn=make_collate_fn(humanoid_dataset.null_token_embedding), 
+    collate_fn=make_collate_fn(tokenizer=tokenizer), 
     shuffle=True, 
     drop_last=False, 
     num_workers=16,
@@ -34,7 +38,7 @@ humanoid_dataloader = DataLoader(
     persistent_workers=True,
 )
 batch = next(iter(humanoid_dataloader))
-config = TransformerConfig(input_dim=batch[0].shape[-1], embed_dim=batch[1].shape[-1], output_dim=batch[0].shape[-1])
+config = TransformerConfig(input_dim=batch[0].shape[-1], embed_dim=2048, output_dim=batch[0].shape[-1])
 print(f'lin_vel_dataset_mean: {humanoid_dataset.statsCollector.mean_velocity}, lin_vel_dataset_std: {humanoid_dataset.statsCollector.std_velocity}')
 print(f'joint_pos_dataset_mean: {humanoid_dataset.statsCollector.mean_joint_pos}, joint_pos_dataset_std: {humanoid_dataset.statsCollector.std_joint_pos}')
 print(f'ang_vel_dataset_mean: {humanoid_dataset.statsCollector.mean_ang_vel}, ang_vel_dataset_std: {humanoid_dataset.statsCollector.std_ang_vel}')
@@ -73,9 +77,9 @@ for epoch in tqdm(range(1000)):
     with profile(activities=activities, schedule=my_schedule) as profilero:
         pbar = tqdm(enumerate(humanoid_dataloader), total=len(humanoid_dataloader))
         for idx, batch in pbar:
-            x_1, cond, cu_seqlen_q, cu_seqlen_k, batch_size = batch
+            x_1, cond, cu_seqlen_q, cu_seqlen_k, batch_size, max_length_q, max_length_k = batch
             x_1 = x_1.to(device=device, dtype=dtype, non_blocking=True)
-            cond = cond.to(device=device, dtype=dtype, non_blocking=True)
+            cond = cond.to(device=device, non_blocking=True)
             cu_seqlen_q = cu_seqlen_q.to(device=device, non_blocking=True)
             cu_seqlen_k = cu_seqlen_k.to(device=device, non_blocking=True)
             t = torch.rand(batch_size, 1).to(dtype=dtype, device=device, non_blocking=True)
@@ -85,7 +89,7 @@ for epoch in tqdm(range(1000)):
             
             # (output_dim == input_dim)
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                u_pred = flow_net(x_t, cond, t, cu_seqlen_q, cu_seqlen_k) # (total_q_len, output_dim)
+                u_pred = flow_net(x_t, cond, t, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k) # (total_q_len, output_dim)
                 loss = torch.mean((u_pred - (x_1 - x_0))**2)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)

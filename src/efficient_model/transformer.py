@@ -31,9 +31,11 @@ class TransformerBlock(nn.Module):
         cond: torch.Tensor,
         cu_seqlen_q: torch.Tensor,
         cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
     ) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x), cu_seqlen_q)
-        x = x + self.cross_attn(self.ln2(x), cond, cu_seqlen_q, cu_seqlen_k)
+        x = x + self.attn(self.ln1(x), cu_seqlen_q, max_length_q)
+        x = x + self.cross_attn(self.ln2(x), cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
         x = x + self.ffn(self.ln3(x))
         return x
 
@@ -74,6 +76,8 @@ class EfficientTransformer(nn.Module):
         t: torch.Tensor,
         cu_seqlen_q: torch.Tensor,
         cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
     ) -> torch.Tensor:
         """
         Args:
@@ -87,7 +91,7 @@ class EfficientTransformer(nn.Module):
         """
         x = self.in_linear(x)
         for idx, layer in enumerate(self.layers):
-            x = layer(x, cond, cu_seqlen_q, cu_seqlen_k)
+            x = layer(x, cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
             x = self.adaln_layers[idx](x, t)
         x = self.out_linear(x)
         return x

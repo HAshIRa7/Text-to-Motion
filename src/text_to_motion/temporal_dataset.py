@@ -7,6 +7,8 @@ from typing import Dict, List
 from transformers import AutoTokenizer, AutoModel
 from tqdm.auto import tqdm
 import pickle
+from transformers import AutoTokenizer
+import random
 
 g1_data_names2size = {
     'velocity': 2,
@@ -19,7 +21,7 @@ g1_data_names2size = {
 }
 
 class HumanoidDataset(Dataset):
-    def __init__(self, motions_folder: str, motions_new_folder: str, motions_len_min: int = 51, motions_len_max: int = 2500, catch_temporal=False):
+    def __init__(self, motions_folder: str, motions_new_folder: str):
         self.main_motions_new_folder = motions_new_folder
         with open('statistic_collector.pkl', 'rb') as statistic_collector:
             self.statsCollector = pickle.load(statistic_collector)
@@ -40,7 +42,8 @@ class HumanoidDataset(Dataset):
             ang_vel = motion['ang_vel']
             joint_vel = motion['joint_vel']
             height = motion['height']
-            emb = torch.tensor(motion['emb'])
+            # emb = torch.tensor(motion['emb'])
+            text = motion['text'].item()
 
         return (torch.cat([
             ((torch.tensor(joint_pos) - self.statsCollector.mean_joint_pos[None, :]) / self.statsCollector.std_joint_pos[None, :]).to(dtype=torch.float32),
@@ -50,38 +53,36 @@ class HumanoidDataset(Dataset):
             ((torch.tensor(ang_vel[:, None]) - self.statsCollector.mean_ang_vel[None, :]) / self.statsCollector.std_ang_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(joint_vel) - self.statsCollector.mean_joint_vel[None, :]) / self.statsCollector.std_joint_vel[None, :]).to(dtype=torch.float32),
             ((torch.tensor(height[:, None]) - self.statsCollector.mean_height[None, :]) / self.statsCollector.std_height[None, :]).to(dtype=torch.float32),
-        ], dim=-1), emb)
+        ], dim=-1), text)
+
+
+def make_collate_fn(tokenizer: AutoTokenizer, replacement_probs: float = 0.08):
     
-    
-def make_collate_fn(null_token_embedding: torch.Tensor, replacement_probs: float = 0.08):
-    
-    def collate_fn(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        proprio_list_data, embeddings_list_data = zip(*batch)
+    def collate_fn(batch: list[tuple[torch.Tensor, str]]):
+        proprio_list_data, text_list_data = zip(*batch)
         cumsum_seq_lens = torch.cumsum(
             torch.tensor([len(proprio) for proprio in proprio_list_data]),
             dim=0,
         )
         cu_seqlen_q = torch.cat((torch.zeros(1), cumsum_seq_lens), dim=0).to(dtype=torch.int32)
         proprio_tensor_data = torch.cat(proprio_list_data, dim=0) # shape - total_len_q x proprio_dim
-        mask = torch.rand(len(embeddings_list_data)) < replacement_probs
-        unsq_null_token_embedding = null_token_embedding.unsqueeze(0)
-        new_embeddings_list_data = [
-            unsq_null_token_embedding if elem_mask else seqs_embeddings
-            for elem_mask, seqs_embeddings in zip(mask, embeddings_list_data)
-        ]
-        text_cumsum_seq_lens = torch.cumsum(
-            torch.tensor([len(emb) for emb in new_embeddings_list_data]),
-            dim=0,
-        )
-        cu_seqlen_k = torch.cat((torch.zeros(1), text_cumsum_seq_lens), dim=0).to(dtype=torch.int32)
-        embeddings_tensor_data = torch.cat(new_embeddings_list_data, dim=0)
+        mask = [random.random() < replacement_probs for _ in range(len(text_list_data))]
+        new_text_list_data = [text if elem_mask else '' for text, elem_mask in zip(text_list_data, mask)]
+        text_batch = tokenizer(new_text_list_data, padding=True, truncation=True, max_length=512, return_tensors="pt")
+
+        seq_lens = text_batch['attention_mask'].sum(dim=1)
+        cu_seqlen_k = torch.cat((torch.zeros(1), torch.cumsum(seq_lens, dim=-1)), dim=0).to(dtype=torch.int32)
+        max_length_q = max(list(map(len, proprio_list_data)))
+        max_length_k = max(seq_lens.tolist())
     
         return (
-            proprio_tensor_data, 
-            embeddings_tensor_data,
+            proprio_tensor_data,
+            text_batch,
             cu_seqlen_q,
             cu_seqlen_k,
             len(batch),
+            max_length_q,
+            max_length_k,
         )
         
     return collate_fn

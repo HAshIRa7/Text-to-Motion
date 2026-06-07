@@ -89,6 +89,7 @@ class MultiHeadAttention(nn.Module):
         self, 
         x: torch.Tensor,
         cu_seqlen: torch.Tensor,
+        max_length_q: int,
     ) -> torch.Tensor:
         total_q_len, H = x.shape
         
@@ -97,17 +98,16 @@ class MultiHeadAttention(nn.Module):
         k = k.view(total_q_len, self.num_heads, self.head_dim)
         v = v.view(total_q_len, self.num_heads, self.head_dim)
         
-        max_length = torch.amax(cu_seqlen[1:] - cu_seqlen[:-1]).item()
-        q = self.rope(q, cu_seqlen, max_length)
-        k = self.rope(k, cu_seqlen, max_length)
+        q = self.rope(q, cu_seqlen, max_length_q)
+        k = self.rope(k, cu_seqlen, max_length_q)
         out = flash_attn_varlen_func(
             q,
             k,
             v,
             cu_seqlens_q=cu_seqlen,
             cu_seqlens_k=cu_seqlen,
-            max_seqlen_q=max_length,
-            max_seqlen_k=max_length,
+            max_seqlen_q=max_length_q,
+            max_seqlen_k=max_length_q,
             dropout_p=self.config.dropout,
             causal=False,
             deterministic=True
@@ -149,6 +149,8 @@ class MultiHeadCrossAttention(nn.Module):
         cond: torch.Tensor,
         cu_seqlen_q: torch.Tensor,
         cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
     ) -> torch.Tensor:
         total_q_len, H = x.shape
         total_k_len, _ = cond.shape
@@ -157,10 +159,8 @@ class MultiHeadCrossAttention(nn.Module):
         k = self.k_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
         v = self.v_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
         
-        max_length_q = torch.amax(cu_seqlen_q[1:] - cu_seqlen_q[:-1]).item()
-        max_length_k = torch.amax(cu_seqlen_k[1:] - cu_seqlen_k[:-1]).item()
-        q = self.rope(q, cu_seqlen_q, max_length_q)
-        k = self.rope(k, cu_seqlen_k, max_length_k)
+        # q = self.rope(q, cu_seqlen_q, max_length_q)
+        # k = self.rope(k, cu_seqlen_k, max_length_k)
         out = flash_attn_varlen_func(
             q,
             k,
