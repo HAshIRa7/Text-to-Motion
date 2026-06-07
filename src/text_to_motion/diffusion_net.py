@@ -69,8 +69,8 @@ class FlowMatchingNet(nn.Module):
         t - total_q_len x 1
         cu_seqlen - torch.int32 tensor of shape (batch_size + 1)
         '''
-        with torch.no_grad():
-            cond_embed = self.text_encoder(**cond).last_hidden_state[cond['attention_mask'].bool()]
+        # with torch.no_grad():
+        cond_embed = self.text_encoder(**cond).last_hidden_state[cond['attention_mask'].bool()]
         flow_net_output = self.flow_net(x, cond_embed, t[:, 0], cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k) # flow_net_output: total_q_len x output_dim
         return flow_net_output
         

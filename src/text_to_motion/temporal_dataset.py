@@ -56,7 +56,7 @@ class HumanoidDataset(Dataset):
         ], dim=-1), text)
 
 
-def make_collate_fn(tokenizer: AutoTokenizer, replacement_probs: float = 0.08):
+def make_collate_fn(tokenizer: AutoTokenizer, replacement_probs: float = 0.15):
     
     def collate_fn(batch: list[tuple[torch.Tensor, str]]):
         proprio_list_data, text_list_data = zip(*batch)
@@ -66,7 +66,7 @@ def make_collate_fn(tokenizer: AutoTokenizer, replacement_probs: float = 0.08):
         )
         cu_seqlen_q = torch.cat((torch.zeros(1), cumsum_seq_lens), dim=0).to(dtype=torch.int32)
         proprio_tensor_data = torch.cat(proprio_list_data, dim=0) # shape - total_len_q x proprio_dim
-        mask = [random.random() < replacement_probs for _ in range(len(text_list_data))]
+        mask = [random.random() > replacement_probs for _ in range(len(text_list_data))]
         new_text_list_data = [text if elem_mask else '' for text, elem_mask in zip(text_list_data, mask)]
         text_batch = tokenizer(new_text_list_data, padding=True, truncation=True, max_length=512, return_tensors="pt")
 
