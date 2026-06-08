@@ -101,8 +101,8 @@ def main():
         output_device=local_rank,
     )
         
-    optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-5)
-    scheduler = ExponentialLR(optimizer, gamma=0.95)
+    optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-4)
+    scheduler = ExponentialLR(optimizer, gamma=0.9)
     optimizer.zero_grad()
     save_folder = 'checkpoints'
     logs_folder = 'logs'

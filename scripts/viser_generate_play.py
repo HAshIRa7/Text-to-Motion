@@ -10,8 +10,7 @@ import tyro
 from robot_descriptions.loaders.yourdfpy import load_robot_description
 from text_to_motion import (
     FlowMatchingNet, 
-    TransformerConfig, 
-    # last_token_pool,
+    TransformerConfig,
     convert_roll_pitch_ang_vel_to_quat,
     convert_lin_vel_xy_to_root_pos,
 )
@@ -111,10 +110,8 @@ class InferenceModel:
         flow_net.load_state_dict(state_dict)
         self.flow_net = flow_net.to(device=device, dtype=dtype)
         self.flow_net.eval()
-        
-        # print(self.flow_net)
+
         self.tokenizer = AutoTokenizer.from_pretrained('google/flan-t5-xl')
-        # self.model = AutoModel.from_pretrained('Qwen/Qwen3-4B').to(device)
         
         self.schedule = edm_schedule(diffusion_steps + 1).to(device=device, dtype=dtype).unsqueeze(dim=1)
         self.motion_len = int(20.0 * 50)
@@ -133,30 +130,18 @@ class InferenceModel:
             batch,
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=max_length,
             return_tensors="pt",
         )
-        # with torch.no_grad():   
-        #     outputs = self.model(**batch_dict)
-        #     embed = outputs.last_hidden_state.to(dtype=self.dtype)
-        # model = BGEM3FlagModel('BAAI/bge-m3',  
-        #                use_fp16=True)
-        # embed = model.encode(batch, return_dense=True, return_sparse=True, return_colbert_vecs=True)['colbert_vecs'] 
-        # cond_embed = torch.tensor(embed[0]).to(device=self.device, dtype=self.dtype)
-        # uncond_embed = torch.tensor(embed[1]).to(device=self.device, dtype=self.dtype)
         self.motion_len = int(50 * self.motion_time)
         motion = torch.randn(self.motion_len, self.config.output_dim).to(device=self.device, dtype=self.dtype)
         motion = torch.cat([motion, motion], dim=0)
         cu_seqlen_q = torch.tensor([0, self.motion_len, 2 * self.motion_len]).to(device=self.device, dtype=torch.int32)
         cond_cu_seqlen_k = torch.tensor([0, *torch.cumsum(batch_dict['attention_mask'].sum(dim=-1), dim=0).tolist()]).to(device=self.device, dtype=torch.int32)
-        # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
-        # uncond_embed = torch.repeat_interleave(uncond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
-        # cond_embed = torch.repeat_interleave(cond_embed, cu_seqlen[1:] - cu_seqlen[:-1], dim=0)
         copy_schedule = self.schedule * torch.ones(size=(1, 2 * self.motion_len)).to(device=self.device, dtype=self.dtype)
         with torch.no_grad():
             for it in range(self.diffusion_steps):
                 with torch.autocast(device_type=self.device, dtype=torch.bfloat16):
-                    # motion = self.flow_net.midpoint_step(motion, cond_embed, cu_seqlen, copy_schedule[it][:, None], copy_schedule[it + 1][:, None])
                     motion = self.flow_net.new_guidance_step(
                         motion, 
                         batch_dict.to(self.device),
@@ -170,7 +155,6 @@ class InferenceModel:
                         motion_len=self.motion_len
                     )
                     motion = torch.cat([motion, motion], dim=0)
-                    # motion = self.flow_net.guidance_step(motion, cond_embed, uncond_embed, self.schedule[it][None], self.schedule[it + 1][None])
         
         return postprocess_motion(self.flow_net, motion[:self.motion_len][None])
 
@@ -194,7 +178,7 @@ def main(
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
     # checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
-    checkpoint_path: str = 'checkpoints/model_new_weight_0.pth'
+    checkpoint_path: str = 'checkpoints/model_new_weight_1.pth'
 ) -> None:
     # Start viser server.
     server = viser.ViserServer()

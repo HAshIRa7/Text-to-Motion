@@ -55,11 +55,7 @@ class EfficientTransformer(nn.Module):
         self.layers = nn.ModuleList([
             TransformerBlock(config) for _ in range(config.num_layers)
         ])
-        self.adaln_layers = nn.ModuleList([
-            FusedAdaLNModulation(config.hidden_dim) for _ in range(config.num_layers)
-        ])
-
-        # self.ln_f = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
+        self.adaln_layer = FusedAdaLNModulation(config.hidden_dim)
         self.out_linear = nn.Linear(config.hidden_dim, config.output_dim)
         self.apply(self._init_weights)
 
@@ -95,6 +91,6 @@ class EfficientTransformer(nn.Module):
         x = self.absolute_position_encoding(x, cu_seqlen_q)
         for idx, layer in enumerate(self.layers):
             x = layer(x, cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
-            x = self.adaln_layers[idx](x, t)
+            x = self.adaln_layer(x, t)
         x = self.out_linear(x)
         return x

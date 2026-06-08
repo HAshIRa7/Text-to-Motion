@@ -13,6 +13,8 @@ import torch
 import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from transformers import AutoTokenizer, AutoModel
+import traceback
+import pickle
 
 NEXT_WORDS = ["After", "Next", "Then", "Consequently"]
 FPS = 50
@@ -88,6 +90,8 @@ def load_file(motions_dir: str, motions_new_dir, motion_file: str, motions_len_m
             setattr(localstatsCollector, f'mean_{k}_squared', torch.zeros(siz))
             setattr(localstatsCollector, f'std_{k}', torch.ones(siz))
             setattr(localstatsCollector, f'local_len', 0)
+            
+        tmp_dict = {}
         with np.load(os.path.join(motions_dir, motion_file), allow_pickle=True) as data:
             metadata = data['metadata']
             new_metadata = [item for item in metadata]
@@ -102,6 +106,28 @@ def load_file(motions_dir: str, motions_new_dir, motion_file: str, motions_len_m
                         'end_time': metadata[i + offset]['end_time'],
                         'description': prompt
                     })
+                    
+            tmp_dict['height'] = data['body_pos_w'][:, 0, 2]
+            tmp_dict['joint_pos'] = data['joint_pos']
+            tmp_dict['joint_vel'] = data['joint_vel']
+            root_quat_w = data['body_quat_w'][:, 0]
+            roll, pitch = convert_quat_to_roll_pitch(root_quat_w)
+            assert roll.shape[0] > 0
+            tmp_dict['roll'] = roll
+            tmp_dict['pitch'] = pitch
+            tmp_dict['velocity'] = convert_lin_vel_to_xy(root_quat_w, data['body_lin_vel_w'][:, 0])
+            tmp_dict['ang_vel'] = data['body_ang_vel_w'][:, 0, 2]
+            
+            localstatsCollector.local_len += len(roll)
+                    
+            for k in g1_data_names2size:
+                aggregated_first_momentum = np.sum(tmp_dict[k], axis=0)
+                aggregated_second_momentum = np.sum(tmp_dict[k]**2, axis=0) 
+                if not isinstance(aggregated_first_momentum, np.ndarray):
+                    aggregated_first_momentum = aggregated_first_momentum[None]
+                    aggregated_second_momentum = aggregated_second_momentum[None]
+                setattr(localstatsCollector, f'mean_{k}', getattr(localstatsCollector, f'mean_{k}') + torch.from_numpy(aggregated_first_momentum))
+                setattr(localstatsCollector, f'mean_{k}_squared', getattr(localstatsCollector, f'mean_{k}_squared') + torch.from_numpy(aggregated_second_momentum))
                         
             motion_len_total = len(data['joint_pos'])
             for it, one_metadata in enumerate(new_metadata):
@@ -129,17 +155,6 @@ def load_file(motions_dir: str, motions_new_dir, motion_file: str, motions_len_m
                     dct[motion_name]['velocity'] = convert_lin_vel_to_xy(root_quat_w, data['body_lin_vel_w'][motion_slice, 0])
                     dct[motion_name]['ang_vel'] = data['body_ang_vel_w'][motion_slice, 0, 2]
                     
-                    localstatsCollector.local_len += len(roll)
-                    
-                    for k in g1_data_names2size:
-                        aggregated_first_momentum = np.sum(dct[motion_name][k], axis=0)
-                        aggregated_second_momentum = np.sum(dct[motion_name][k]**2, axis=0) 
-                        if not isinstance(aggregated_first_momentum, np.ndarray):
-                            aggregated_first_momentum = aggregated_first_momentum[None]
-                            aggregated_second_momentum = aggregated_second_momentum[None]
-                        setattr(localstatsCollector, f'mean_{k}', getattr(localstatsCollector, f'mean_{k}') + torch.from_numpy(aggregated_first_momentum))
-                        setattr(localstatsCollector, f'mean_{k}_squared', getattr(localstatsCollector, f'mean_{k}_squared') + torch.from_numpy(aggregated_second_momentum))
-                    
                     np.savez(
                         os.path.join(motions_new_dir, motion_name),
                         velocity=dct[motion_name]['velocity'],
@@ -152,6 +167,10 @@ def load_file(motions_dir: str, motions_new_dir, motion_file: str, motions_len_m
                         text=np.array(dct[motion_name]['text'], dtype=object),
                     )
     except Exception as e:
+        print(f"Exception Type: {type(e).__name__}")
+        print(f"Exception Repr: {repr(e)}")
+        print("Full Traceback:")
+        traceback.print_exc()
         print(f'Exception: {e} on file {motion_file}')
                 
     return localstatsCollector
@@ -182,4 +201,6 @@ def collect_data(motions_dir: str, motions_new_dir: str, motions_len_min: int, m
         setattr(statsCollector, f'mean_{k}_squared', getattr(statsCollector, f'mean_{k}_squared') / pure_motions_len)
         setattr(statsCollector, f'std_{k}', torch.sqrt(getattr(statsCollector, f'mean_{k}_squared') - getattr(statsCollector, f'mean_{k}')**2))
     
+    with open('statistic_collector.pkl', 'wb') as out_file:
+        pickle.dump(statsCollector, out_file, pickle.HIGHEST_PROTOCOL)
     return statsCollector

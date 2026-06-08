@@ -14,6 +14,7 @@ class PositionalEncoding(nn.Module):
         pe[:, ::2] = sin
         pe[:, 1::2] = cos
         self.register_buffer('pe', pe, persistent=False)
+        self.gate = nn.Parameter(torch.zeros(1))
         
     def forward(self, x: torch.Tensor, cu_seqlen_q: torch.Tensor):
         
@@ -21,4 +22,4 @@ class PositionalEncoding(nn.Module):
         mask = torch.arange(lengths.max(), device=lengths.device) < lengths.unsqueeze(dim=1)
         indices = torch.nonzero(mask)[:, 1]
         
-        return x + self.pe[indices]
+        return x + self.gate * self.pe[indices]

@@ -15,7 +15,7 @@ def convert_quat_to_roll_pitch(quat: np.ndarray):
     roll = np.arctan2(sin_roll, cos_roll)
     
     sin_pitch = 2.0 * (q_w * q_y - q_z * q_x)
-    pitch = np.where(np.abs(sin_pitch) >= 1, copysign(np.pi / 2.0, sin_pitch), np.asin(sin_pitch))
+    pitch = np.where(np.abs(sin_pitch) >= 1, copysign(np.pi / 2.0, sin_pitch), np.arcsin(sin_pitch))
     
     return roll, pitch
 
