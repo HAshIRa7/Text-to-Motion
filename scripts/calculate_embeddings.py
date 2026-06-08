@@ -56,7 +56,7 @@ async def save_consumer(queue, loop, pbar):
 
 async def async_main(motions_dir: str,
                      embed_concurrency: int = 128,
-                     save_workers: int = 8):
+                     save_workers: int = 32):
     files = sorted(os.listdir(motions_dir))
     items: list[tuple[str, str]] = []
     
@@ -69,13 +69,14 @@ async def async_main(motions_dir: str,
                 pbar.update(1) 
 
     engine_args = AsyncEngineArgs(
-        model="Qwen/Qwen3-Embedding-4B",
+        model="BAAI/bge-m3",
         convert="embed",
         gpu_memory_utilization=0.95,
         runner="pooling",
         max_model_len=8192,
         pooler_config=PoolerConfig(
-            seq_pooling_type="LAST",
+            task="token_embed",
+            # seq_pooling_type="ALL",
             use_activation=False, # in question !!!!!!
         )
     )
@@ -103,10 +104,10 @@ def calculate_embeddings(
     new_motions_dir: str = 'postprocessed_motions',
     motions_len_min: int = 51,
     motions_len_max: int = 2500,
-    batch_size: int = 512,
+    embed_concurrency: int = 32,
 ):
     collect_data(motions_dir, new_motions_dir, motions_len_min, motions_len_max)
-    asyncio.run(async_main(new_motions_dir, batch_size))
+    asyncio.run(async_main(new_motions_dir, embed_concurrency))
 
 
 if __name__ == '__main__':

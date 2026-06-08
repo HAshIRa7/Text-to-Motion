@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 from .config import TransformerConfig
 from efficient_model import EfficientTransformer
+from transformers import T5EncoderModel
 
 class FlowMatchingNet(nn.Module):
     
@@ -59,15 +60,18 @@ class FlowMatchingNet(nn.Module):
         self.register_buffer("height_std", height_std)
         
         self.flow_net = EfficientTransformer(config)
+        self.text_encoder = T5EncoderModel.from_pretrained('google/flan-t5-xl', torch_dtype=torch.bfloat16)
         
-    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, cu_seqlen: torch.Tensor):
+    def forward(self, x: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, cu_seqlen_q: torch.Tensor, cu_seqlen_k: torch.Tensor, max_length_q: int, max_length_k: int):
         '''
         x - size total_q_len x (input_dim - 1)
         cond - size total_q_len x embed_dim
         t - total_q_len x 1
         cu_seqlen - torch.int32 tensor of shape (batch_size + 1)
         '''
-        flow_net_output = self.flow_net(x, cond, t[:, 0], cu_seqlen) # flow_net_output: total_q_len x output_dim
+        # with torch.no_grad():
+        cond_embed = self.text_encoder(**cond).last_hidden_state[cond['attention_mask'].bool()]
+        flow_net_output = self.flow_net(x, cond_embed, t[:, 0], cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k) # flow_net_output: total_q_len x output_dim
         return flow_net_output
         
     
@@ -97,12 +101,38 @@ class FlowMatchingNet(nn.Module):
         uncond: torch.Tensor, 
         t_start: torch.Tensor, 
         t_end: torch.Tensor,
-        cu_seqlen: torch.Tensor,
-        guidance_scale: int = 3
+        cu_seqlen_q: torch.Tensor,
+        cond_cu_seqlen_k: torch.Tensor,
+        uncond_cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
+        guidance_scale: int = 3,
     ):
         
-        cond_vel = self.forward(x, cond, t_start, cu_seqlen=cu_seqlen)
-        uncond_vel = self.forward(x, uncond, t_start, cu_seqlen=cu_seqlen)
+        cond_vel = self.forward(x, cond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=cond_cu_seqlen_k, max_length_q=max_length_q, max_length_k=max_length_k)
+        uncond_vel = self.forward(x, uncond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=uncond_cu_seqlen_k, max_length_q=max_length_q,  max_length_k=1)
         guidance_vel = (1 - guidance_scale) * uncond_vel + guidance_scale * cond_vel
         x_next = x + guidance_vel * (t_end - t_start)
         return x_next
+    
+    def new_guidance_step(
+        self, 
+        x: torch.Tensor, 
+        cond, 
+        # uncond: torch.Tensor,
+        t_start: torch.Tensor, 
+        t_end: torch.Tensor,
+        cu_seqlen_q: torch.Tensor,
+        cond_cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
+        motion_len: int,
+        guidance_scale: int = 3,
+    ):
+        
+        cond_vel = self.forward(x, cond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=cond_cu_seqlen_k, max_length_q=max_length_q, max_length_k=max_length_k)
+        # uncond_vel = self.forward(x, uncond, t_start, cu_seqlen_q=cu_seqlen_q, cu_seqlen_k=uncond_cu_seqlen_k, max_length_q=max_length_q,  max_length_k=1)
+        guidance_vel = (1 - guidance_scale) * cond_vel[motion_len:] + guidance_scale * cond_vel[:motion_len]
+        x_next = x[:motion_len] + guidance_vel * (t_end - t_start)[:motion_len]
+        return x_next
+

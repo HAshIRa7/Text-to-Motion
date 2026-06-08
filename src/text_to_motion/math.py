@@ -12,10 +12,10 @@ def convert_quat_to_roll_pitch(quat: np.ndarray):
     
     sin_roll = 2.0 * (q_w * q_x + q_y * q_z)
     cos_roll = 1 - 2 * (q_x * q_x + q_y * q_y)
-    roll = np.atan2(sin_roll, cos_roll)
+    roll = np.arctan2(sin_roll, cos_roll)
     
     sin_pitch = 2.0 * (q_w * q_y - q_z * q_x)
-    pitch = np.where(np.abs(sin_pitch) >= 1, copysign(np.pi / 2.0, sin_pitch), np.asin(sin_pitch))
+    pitch = np.where(np.abs(sin_pitch) >= 1, copysign(np.pi / 2.0, sin_pitch), np.arcsin(sin_pitch))
     
     return roll, pitch
 
@@ -34,7 +34,7 @@ def yaw_quat(quat: np.ndarray) -> np.ndarray:
     qx = quat_yaw[:, 1]
     qy = quat_yaw[:, 2]
     qz = quat_yaw[:, 3]
-    yaw = np.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz))
+    yaw = np.arctan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz))
     quat_yaw = np.zeros_like(quat_yaw)
     quat_yaw[:, 3] = np.sin(yaw / 2)
     quat_yaw[:, 0] = np.cos(yaw / 2)

@@ -42,13 +42,13 @@ class RotaryPositionalEmbedding(nn.Module):
         self.sin = self.sin.to(device=self.inv_freq.device)
         return self
     
-    def forward(self, q: torch.Tensor, k: torch.Tensor, cu_seqlen: torch.Tensor, max_length: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, q: torch.Tensor, cu_seqlen: torch.Tensor, max_length: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Apply rotary positionsal embedding to q and k.
         
         Args:
-            q: (total_q_len, head_dim)
-            k: (total_q_len, head_dim)
+            q: (total_q_len, n_heads, head_dim)
+            k: (total_q_len, n_heads head_dim)
             seq_len: sequence length (must be <= max_seq_len)
             
         Returns:
@@ -58,10 +58,9 @@ class RotaryPositionalEmbedding(nn.Module):
         cos = self.cos[:max_length, :]
         sin = self.sin[:max_length, :]
 
-        q_rotated = apply_rotary_emb(q, cos, sin, cu_seqlens=cu_seqlen, max_seqlen=max_length) 
-        k_rotated = apply_rotary_emb(k, cos, sin, cu_seqlens=cu_seqlen, max_seqlen=max_length)
+        q_rotated = apply_rotary_emb(q, cos, sin, cu_seqlens=cu_seqlen, max_seqlen=max_length)
 
-        return q_rotated, k_rotated
+        return q_rotated
 
 class MultiHeadAttention(nn.Module):
     """
@@ -90,6 +89,7 @@ class MultiHeadAttention(nn.Module):
         self, 
         x: torch.Tensor,
         cu_seqlen: torch.Tensor,
+        max_length_q: int,
     ) -> torch.Tensor:
         total_q_len, H = x.shape
         
@@ -98,16 +98,16 @@ class MultiHeadAttention(nn.Module):
         k = k.view(total_q_len, self.num_heads, self.head_dim)
         v = v.view(total_q_len, self.num_heads, self.head_dim)
         
-        max_length = torch.amax(cu_seqlen[1:] - cu_seqlen[:-1]).item()
-        q, k = self.rope(q, k, cu_seqlen, max_length)
+        q = self.rope(q, cu_seqlen, max_length_q)
+        k = self.rope(k, cu_seqlen, max_length_q)
         out = flash_attn_varlen_func(
             q,
             k,
             v,
             cu_seqlens_q=cu_seqlen,
             cu_seqlens_k=cu_seqlen,
-            max_seqlen_q=max_length,
-            max_seqlen_k=max_length,
+            max_seqlen_q=max_length_q,
+            max_seqlen_k=max_length_q,
             dropout_p=self.config.dropout,
             causal=False,
             deterministic=True
@@ -115,4 +115,65 @@ class MultiHeadAttention(nn.Module):
         out = out.contiguous().view(total_q_len, H)
         out = self.out_proj(out)
 
-        return out
+        return out 
+    
+    
+class MultiHeadCrossAttention(nn.Module):
+    """
+    Multi-head attention with vanilla implementation and RoPE.
+    """
+    
+    def __init__(self, config: TransformerConfig):
+        super().__init__()
+        self.config = config
+        self.hidden_dim = config.hidden_dim
+        self.num_heads = config.num_heads
+        self.head_dim = config.hidden_dim // config.num_heads
+
+        self.q_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
+        self.k_proj = nn.Linear(config.embed_dim, config.hidden_dim, bias=False)
+        self.v_proj = nn.Linear(config.embed_dim, config.hidden_dim, bias=False)
+        self.out_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
+
+        self.rope = RotaryPositionalEmbedding(
+            head_dim=self.head_dim,
+            max_seq_len=config.max_seq_len,
+            theta=config.rope_theta,
+        )
+
+        self.dropout = nn.Dropout(config.dropout) 
+        
+    def forward(
+        self, 
+        x: torch.Tensor,
+        cond: torch.Tensor,
+        cu_seqlen_q: torch.Tensor,
+        cu_seqlen_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
+    ) -> torch.Tensor:
+        total_q_len, H = x.shape
+        total_k_len, _ = cond.shape
+        
+        q = self.q_proj(x).view(total_q_len, self.num_heads, self.head_dim)
+        k = self.k_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
+        v = self.v_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
+        
+        # q = self.rope(q, cu_seqlen_q, max_length_q)
+        # k = self.rope(k, cu_seqlen_k, max_length_k)
+        out = flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q=cu_seqlen_q,
+            cu_seqlens_k=cu_seqlen_k,
+            max_seqlen_q=max_length_q,
+            max_seqlen_k=max_length_k,
+            dropout_p=self.config.dropout,
+            causal=False,
+            deterministic=True
+        )
+        out = out.contiguous().view(total_q_len, H)
+        out = self.out_proj(out)
+
+        return out 
