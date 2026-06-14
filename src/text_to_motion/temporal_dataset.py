@@ -34,7 +34,11 @@ class HumanoidDataset(Dataset):
         return len(self.motion_names)
     
     def __getitem__(self, idx):
-        with np.load(os.path.join(self.main_motions_new_folder, self.motion_names[idx]), allow_pickle=True) as motion:
+        
+        cur_idx = idx
+        
+            
+        with np.load(os.path.join(self.main_motions_new_folder, self.motion_names[cur_idx]), allow_pickle=True) as motion:
             joint_pos = motion['joint_pos']
             roll = motion['roll']
             pitch = motion['pitch']
@@ -42,16 +46,30 @@ class HumanoidDataset(Dataset):
             ang_vel = motion['ang_vel']
             joint_vel = motion['joint_vel']
             height = motion['height']
-            text = motion['text'].item()
+            texts = [motion['text'].item()]
+            
+            if 'text_0' in motion and len(texts[0]) > 1:
+                texts.extend([motion['text_0'].item(), motion['text_1'].item(), motion['text_2'].item()])
+            
+        left_corner = 0
+        right_corner = len(roll)
+        if len(roll) > 100:
+            # perform random shift
+            left_corner = random.randint(0, 25)
+            right_corner = len(roll) - random.randint(0, 25)
+            
+        motion_slice = slice(left_corner, right_corner)
+        rand_text = random.randint(0, len(texts) - 1)
+        text = texts[rand_text]
 
         return (torch.cat([
-            ((torch.tensor(joint_pos) - self.statsCollector.mean_joint_pos[None, :]) / self.statsCollector.std_joint_pos[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(roll[:, None]) - self.statsCollector.mean_roll[None, :]) / self.statsCollector.std_roll[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(pitch[:, None]) - self.statsCollector.mean_pitch[None, :]) / self.statsCollector.std_pitch[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(lin_vel) - self.statsCollector.mean_velocity[None, :]) / self.statsCollector.std_velocity[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(ang_vel[:, None]) - self.statsCollector.mean_ang_vel[None, :]) / self.statsCollector.std_ang_vel[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(joint_vel) - self.statsCollector.mean_joint_vel[None, :]) / self.statsCollector.std_joint_vel[None, :]).to(dtype=torch.float32),
-            ((torch.tensor(height[:, None]) - self.statsCollector.mean_height[None, :]) / self.statsCollector.std_height[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(joint_pos[motion_slice]) - self.statsCollector.mean_joint_pos[None, :]) / self.statsCollector.std_joint_pos[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(roll[motion_slice, None]) - self.statsCollector.mean_roll[None, :]) / self.statsCollector.std_roll[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(pitch[motion_slice, None]) - self.statsCollector.mean_pitch[None, :]) / self.statsCollector.std_pitch[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(lin_vel[motion_slice]) - self.statsCollector.mean_velocity[None, :]) / self.statsCollector.std_velocity[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(ang_vel[motion_slice, None]) - self.statsCollector.mean_ang_vel[None, :]) / self.statsCollector.std_ang_vel[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(joint_vel[motion_slice]) - self.statsCollector.mean_joint_vel[None, :]) / self.statsCollector.std_joint_vel[None, :]).to(dtype=torch.float32),
+            ((torch.tensor(height[motion_slice, None]) - self.statsCollector.mean_height[None, :]) / self.statsCollector.std_height[None, :]).to(dtype=torch.float32),
         ], dim=-1), text)
 
 

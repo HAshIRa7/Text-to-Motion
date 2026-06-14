@@ -175,28 +175,43 @@ class MemoryEfficientSwiGLUMLP(torch.autograd.Function):
             )
 
 
+# class SwiGLUFeedForward(nn.Module):
+#     """
+#     gpt-oss style SwiGLU.
+    
+#     output = W_down @ ((up + 1) * gate * sigmoid(gate * alpha))
+#     """
+    
+#     def __init__(self, hidden_dim: int, intermediate_dim: int):
+#         super().__init__()
+#         self.hidden_dim = hidden_dim
+#         self.intermediate_dim = intermediate_dim
+#         self.alpha = 1.702
+#         self.limit = 7.0
+
+#         self.gate_proj = nn.Linear(hidden_dim, intermediate_dim, bias=False)
+#         self.up_proj = nn.Linear(hidden_dim, intermediate_dim, bias=False)
+#         self.down_proj = nn.Linear(intermediate_dim, hidden_dim, bias=False)
+        
+#         self.fn = sum_compute
+#         self.multi = multi
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         return MemoryEfficientSwiGLUMLP.apply(
+#             x, self.gate_proj.weight, self.up_proj.weight, self.down_proj.weight, self.alpha, self.limit, sum_compute, multi
+#         )
+
 class SwiGLUFeedForward(nn.Module):
-    """
-    gpt-oss style SwiGLU.
-    
-    output = W_down @ ((up + 1) * gate * sigmoid(gate * alpha))
-    """
-    
     def __init__(self, hidden_dim: int, intermediate_dim: int):
         super().__init__()
-        self.hidden_dim = hidden_dim
-        self.intermediate_dim = intermediate_dim
         self.alpha = 1.702
         self.limit = 7.0
-
         self.gate_proj = nn.Linear(hidden_dim, intermediate_dim, bias=False)
-        self.up_proj = nn.Linear(hidden_dim, intermediate_dim, bias=False)
+        self.up_proj   = nn.Linear(hidden_dim, intermediate_dim, bias=False)
         self.down_proj = nn.Linear(intermediate_dim, hidden_dim, bias=False)
-        
-        self.fn = sum_compute
-        self.multi = multi
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return MemoryEfficientSwiGLUMLP.apply(
-            x, self.gate_proj.weight, self.up_proj.weight, self.down_proj.weight, self.alpha, self.limit, sum_compute, multi
-        )
+        gate = self.gate_proj(x).clamp(max=self.limit)
+        up   = self.up_proj(x).clamp(min=-self.limit, max=self.limit)
+        glu  = gate * torch.sigmoid(self.alpha * gate)
+        return self.down_proj((up + 1.0) * glu)

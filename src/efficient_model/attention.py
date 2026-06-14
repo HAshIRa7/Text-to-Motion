@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from text_to_motion.config import TransformerConfig
 from flash_attn.layers.rotary import apply_rotary_emb
 from flash_attn.flash_attn_interface import flash_attn_varlen_func
+from .norm import RMSNorm
 
 class RotaryPositionalEmbedding(nn.Module):
     """
@@ -76,6 +77,8 @@ class MultiHeadAttention(nn.Module):
 
         self.qkv_proj = nn.Linear(config.hidden_dim, 3 * config.hidden_dim, bias=False)
         self.out_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
+        self.normq = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.normk = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
 
         self.rope = RotaryPositionalEmbedding(
             head_dim=self.head_dim,
@@ -94,9 +97,11 @@ class MultiHeadAttention(nn.Module):
         total_q_len, H = x.shape
         
         q, k, v = self.qkv_proj(x).split(self.config.hidden_dim, dim=-1)
-        q = q.view(total_q_len, self.num_heads, self.head_dim)
-        k = k.view(total_q_len, self.num_heads, self.head_dim)
+        q = self.normq(q.view(total_q_len, self.num_heads, self.head_dim)).to(v.dtype)
+        k = self.normk(k.view(total_q_len, self.num_heads, self.head_dim)).to(v.dtype)
         v = v.view(total_q_len, self.num_heads, self.head_dim)
+        
+        # print(f'q {q.dtype}, k {k.dtype}, v {v.dtype}')
         
         q = self.rope(q, cu_seqlen, max_length_q)
         k = self.rope(k, cu_seqlen, max_length_q)
@@ -134,6 +139,8 @@ class MultiHeadCrossAttention(nn.Module):
         self.k_proj = nn.Linear(config.embed_dim, config.hidden_dim, bias=False)
         self.v_proj = nn.Linear(config.embed_dim, config.hidden_dim, bias=False)
         self.out_proj = nn.Linear(config.hidden_dim, config.hidden_dim, bias=False)
+        self.normq = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.normk = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
 
         self.rope = RotaryPositionalEmbedding(
             head_dim=self.head_dim,
@@ -155,9 +162,9 @@ class MultiHeadCrossAttention(nn.Module):
         total_q_len, H = x.shape
         total_k_len, _ = cond.shape
         
-        q = self.q_proj(x).view(total_q_len, self.num_heads, self.head_dim)
-        k = self.k_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
         v = self.v_proj(cond).view(total_k_len, self.num_heads, self.head_dim)
+        q = self.normq(self.q_proj(x).view(total_q_len, self.num_heads, self.head_dim)).to(v.dtype)
+        k = self.normk(self.k_proj(cond).view(total_k_len, self.num_heads, self.head_dim)).to(v.dtype)
         
         # q = self.rope(q, cu_seqlen_q, max_length_q)
         # k = self.rope(k, cu_seqlen_k, max_length_k)

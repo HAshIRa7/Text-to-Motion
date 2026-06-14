@@ -18,6 +18,7 @@ from transformers import AutoTokenizer, AutoModel
 
 import viser
 from viser.extras import ViserUrdf
+import math
 
 joint_names = [
     'left_hip_pitch_joint',
@@ -109,6 +110,9 @@ class InferenceModel:
         state_dict = torch.load(checpoint_path, weights_only=True)
         flow_net.load_state_dict(state_dict)
         self.flow_net = flow_net.to(device=device, dtype=dtype)
+        
+        total_parameters = sum(p.numel() for p in self.flow_net.flow_net.parameters())
+        print('total parameters: ', total_parameters)
         self.flow_net.eval()
 
         self.tokenizer = AutoTokenizer.from_pretrained('google/flan-t5-xl')
@@ -178,7 +182,7 @@ def main(
     load_meshes: bool = True,
     load_collision_meshes: bool = False,
     # checkpoint_path: str = 'checkpoints/model_weight_2_8000.pth',
-    checkpoint_path: str = 'checkpoints/model_new_weight_1.pth'
+    checkpoint_path: str = 'checkpoints/model_new_weight_2.pth'
 ) -> None:
     # Start viser server.
     server = viser.ViserServer()

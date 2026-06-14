@@ -13,31 +13,56 @@ from efficient_model.attention import MultiHeadAttention, MultiHeadCrossAttentio
 from efficient_model.adaln import FusedAdaLNModulation
 from efficient_model.positional_encoding import PositionalEncoding
 
+def modulate(x, shift, scale):
+    return x * (1 + scale) + shift
 
 class TransformerBlock(nn.Module):
     """Single transformer block."""
 
     def __init__(self, config: TransformerConfig):
         super().__init__()
+        
         self.ln1 = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.attn = MultiHeadAttention(config)
         self.ln2 = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.cross_attn = MultiHeadCrossAttention(config)
         self.ln3 = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.ffn = SwiGLUFeedForward(config.hidden_dim, config.intermediate_dim)
-
+        self.adaln_layer = FusedAdaLNModulation(freq_dim=config.hidden_dim, dim=config.hidden_dim)
+        self.modulation = nn.Parameter(torch.randn(1, 6 * config.hidden_dim) / config.hidden_dim**0.5)
+        
     def forward(
         self,
         x: torch.Tensor,
         cond: torch.Tensor,
+        t: torch.Tensor,
         cu_seqlen_q: torch.Tensor,
         cu_seqlen_k: torch.Tensor,
         max_length_q: int,
         max_length_k: int,
     ) -> torch.Tensor:
-        x = x + self.attn(self.ln1(x), cu_seqlen_q, max_length_q)
-        x = x + self.cross_attn(self.ln2(x), cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
-        x = x + self.ffn(self.ln3(x))
+
+        in_dtype = x.dtype
+        
+        (sh_sa, sc_sa, g_sa, sh_ff, sc_ff, g_ff) = (
+            self.adaln_layer(t) + self.modulation
+        ).chunk(6, dim=-1)
+
+        attn_in = modulate(self.ln1(x), sh_sa, sc_sa)
+        y = self.attn(attn_in, cu_seqlen_q, max_length_q)
+        with torch.autocast(device_type="cuda", enabled=False):
+            x = (x + g_sa.float() * y.float()).to(in_dtype)
+
+        cross_in = self.ln2(x)
+        x = x + self.cross_attn(
+            cross_in, cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k
+        )
+
+        ffn_in = modulate(self.ln3(x), sh_ff, sc_ff)
+        y = self.ffn(ffn_in)
+        with torch.autocast(device_type="cuda", enabled=False):
+            x = (x + g_ff.float() * y.float()).to(in_dtype)
+
         return x
 
 
@@ -50,14 +75,16 @@ class EfficientTransformer(nn.Module):
         super().__init__()
         self.config = config
 
-        self.absolute_position_encoding = PositionalEncoding(config.max_seq_len, config.hidden_dim)
         self.in_linear = nn.Linear(config.input_dim, config.hidden_dim)
         self.layers = nn.ModuleList([
             TransformerBlock(config) for _ in range(config.num_layers)
         ])
-        self.adaln_layer = FusedAdaLNModulation(config.hidden_dim)
+        self.last_norm = RMSNorm(config.hidden_dim, eps=config.rms_norm_eps)
         self.out_linear = nn.Linear(config.hidden_dim, config.output_dim)
         self.apply(self._init_weights)
+        for layer in self.layers:
+            nn.init.zeros_(layer.adaln_layer.adaLN_modulation[-1].weight)
+            nn.init.zeros_(layer.adaln_layer.adaLN_modulation[-1].bias)
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -88,9 +115,7 @@ class EfficientTransformer(nn.Module):
             pred: (total_q_len, output_dim)
         """
         x = self.in_linear(x)
-        x = self.absolute_position_encoding(x, cu_seqlen_q)
         for idx, layer in enumerate(self.layers):
-            x = layer(x, cond, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
-            x = self.adaln_layer(x, t)
-        x = self.out_linear(x)
+            x = layer(x, cond, t, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k)
+        x = self.out_linear(self.last_norm(x))
         return x

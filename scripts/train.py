@@ -20,6 +20,7 @@ from transformers import AutoTokenizer, T5EncoderModel
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 def ddp_setup():
     """Initialize the process group. Expects torchrun-provided env vars."""
@@ -45,7 +46,6 @@ def main():
     text_encoder_model_name = 'google/flan-t5-xl'
     tokenizer = AutoTokenizer.from_pretrained(text_encoder_model_name)
     humanoid_dataset = HumanoidDataset(motions_folder='motions', motions_new_folder='postprocessed_motions')
-    # null_token_embedding = humanoid_dataset.null_token_embedding 
     
     sampler = DistributedSampler(
         humanoid_dataset,
@@ -102,7 +102,16 @@ def main():
     )
         
     optimizer = torch.optim.AdamW(flow_net.parameters(), lr=1e-4)
-    scheduler = ExponentialLR(optimizer, gamma=0.9)
+    warmup_steps = 1000
+    total_steps  = 1000 * len(humanoid_dataloader)
+
+    warmup = LinearLR(optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_steps)
+    cosine = CosineAnnealingLR(
+        optimizer,
+        T_max=total_steps - warmup_steps,
+        eta_min=1e-5,
+    )
+    scheduler = SequentialLR(optimizer, [warmup, cosine], milestones=[warmup_steps])
     optimizer.zero_grad()
     save_folder = 'checkpoints'
     logs_folder = 'logs'
@@ -110,13 +119,9 @@ def main():
     if is_main_process():
         cur_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         writer = SummaryWriter(f'logs/{cur_time}')
-    scaler = torch.amp.GradScaler('cuda', growth_interval=30000)
-    # activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
     epoch_iter = tqdm(range(1000)) if is_main_process() else range(1000)
     for epoch in epoch_iter:
         sampler.set_epoch(epoch)
-        # my_schedule = schedule(wait=5, warmup=1, active=12)
-        # with profile(activities=activities, schedule=my_schedule) as profilero:
         pbar = (
             tqdm(enumerate(humanoid_dataloader), total=len(humanoid_dataloader))
             if is_main_process()
@@ -133,36 +138,31 @@ def main():
             x_0 = torch.randn_like(x_1)
             x_t = t * x_1 + (1 - t) * x_0
             
-            # (output_dim == input_dim)
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
                 u_pred = flow_net(x_t, cond, t, cu_seqlen_q, cu_seqlen_k, max_length_q, max_length_k) # (total_q_len, output_dim)
                 loss = torch.mean((u_pred - (x_1 - x_0))**2)
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            # torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=0.5)
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(flow_net.parameters(), max_norm=1.0)
+            optimizer.step()
             optimizer.zero_grad()
+            scheduler.step()
             
-            # loss_sum += loss.detach()
             if is_main_process() and ((idx + 1) % 100 == 0 or idx == 1):
                 writer.add_scalar(
                     "Loss/train", loss.item(),
-                    epoch * len(humanoid_dataset) + idx * 32,
+                    epoch * (len(humanoid_dataset) // world_size) + idx * batch_size,
                 )
-                # profilero.step()
-        
-        scheduler.step()
-        # torch.save(flow_net.state_dict(), f'{save_folder}/model_new_weight_{epoch}.pth')
+                writer.add_scalar(
+                    "Loss/norm", grad_norm.item(),
+                    epoch * (len(humanoid_dataset) // world_size) + idx * batch_size,
+                )
+                writer.add_scalar("lr", scheduler.get_last_lr()[0], epoch * (len(humanoid_dataset) // world_size) + idx * batch_size)
         if is_main_process():
-            # Unwrap .module so keys don't carry the "module." prefix.
             os.makedirs(save_folder, exist_ok=True)
             torch.save(
                 flow_net.module.state_dict(),
                 f"{save_folder}/model_new_weight_{epoch}.pth",
             )
-            
-        # profilero.export_chrome_trace('trace_gt_0.json')
     
     
 if __name__ == '__main__':
