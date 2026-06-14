@@ -5,7 +5,7 @@ Zero-Centered RMSNorm
 import torch
 import torch.nn as nn
 
-@torch.compile
+# @torch.compile
 def rmsnorm_forward(x, weight, eps):
     """Zero-Centered RMSNorm forward."""
     input_dtype = x.dtype
@@ -19,7 +19,7 @@ def rmsnorm_forward(x, weight, eps):
     output = normalized * scale
     return output.to(input_dtype)
 
-@torch.compile
+# @torch.compile
 def rmsnorm_backward(grad_output, x, weight, eps):
     """Zero-Centered RMSNorm backward."""
     with torch.no_grad():
@@ -30,8 +30,8 @@ def rmsnorm_backward(grad_output, x, weight, eps):
         rsqrt = torch.rsqrt(mean_squared_eps)
         normalized = x * rsqrt
 
-        x_grad = rsqrt * grad_output - (rsqrt**3) * x * (x * grad_output).mean(dim=-1, keepdim=True)
-        x_grad *= (1 + weight.float())
+        x_grad = (1 + weight.float()) * rsqrt * grad_output - (rsqrt**3) * x * (x * grad_output * (1 + weight.float())).mean(dim=-1, keepdim=True)
+        # x_grad *= (1 + weight.float())
 
     return x_grad, grad_output * normalized, None
 
